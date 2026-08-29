@@ -4,16 +4,27 @@ export class MotionSensorService {
   private calibration: MotionCalibration = {
     centerBeta: 0,
     centerGamma: 0,
-    sensitivityX: 25, // degrees of roll/yaw for full screen edge deflection
-    sensitivityY: 20, // degrees of pitch for full screen edge deflection
+    sensitivityX: 20, // Degrees of tilt for full screen width traversal
+    sensitivityY: 16, // Degrees of tilt for full screen height traversal
   };
 
   private smoothedX: number = 0;
   private smoothedY: number = 0;
-  private smoothingAlpha: number = 0.65; // Responsive yet smooth filter
+  private smoothingAlpha: number = 0.7; // Responsive low-latency smoothing
   private isCalibrated: boolean = false;
   private isListening: boolean = false;
   private listenerCallback: ((coords: AimCoordinates) => void) | null = null;
+
+  public getScreenOrientation(): number {
+    if (typeof window === 'undefined') return 0;
+    if (window.screen?.orientation?.angle !== undefined) {
+      return window.screen.orientation.angle;
+    }
+    if (typeof window.orientation === 'number') {
+      return window.orientation;
+    }
+    return window.innerWidth > window.innerHeight ? 90 : 0;
+  }
 
   public async requestPermissions(): Promise<boolean> {
     if (typeof window === 'undefined') return false;
@@ -33,7 +44,7 @@ export class MotionSensorService {
       }
     }
 
-    // Android & other modern browsers allow by default
+    // Android & modern mobile browsers allow by default
     return true;
   }
 
@@ -50,12 +61,34 @@ export class MotionSensorService {
   }
 
   public getRawDelta(beta: number, gamma: number): { rawX: number; rawY: number } {
+    const angle = this.getScreenOrientation();
     const deltaGamma = gamma - this.calibration.centerGamma;
     const deltaBeta = beta - this.calibration.centerBeta;
 
+    let deltaX = 0;
+    let deltaY = 0;
+
+    if (angle === 90) {
+      // Landscape Primary (Two-handed landscape gun grip, camera on left)
+      deltaX = -deltaBeta;
+      deltaY = -deltaGamma;
+    } else if (angle === -90 || angle === 270) {
+      // Landscape Secondary (camera on right)
+      deltaX = deltaBeta;
+      deltaY = deltaGamma;
+    } else if (angle === 180) {
+      // Upside down
+      deltaX = -deltaGamma;
+      deltaY = -deltaBeta;
+    } else {
+      // Portrait fallback
+      deltaX = deltaGamma;
+      deltaY = deltaBeta;
+    }
+
     // Map delta angles to normalized [-1, 1] range
-    let rawX = deltaGamma / this.calibration.sensitivityX;
-    let rawY = deltaBeta / this.calibration.sensitivityY;
+    let rawX = deltaX / this.calibration.sensitivityX;
+    let rawY = deltaY / this.calibration.sensitivityY;
 
     // Clamp between -1 and 1
     rawX = Math.max(-1, Math.min(1, rawX));
@@ -67,7 +100,7 @@ export class MotionSensorService {
   public processOrientation(beta: number, gamma: number): AimCoordinates {
     const { rawX, rawY } = this.getRawDelta(beta, gamma);
 
-    // Apply Exponential Moving Average (EMA) smoothing
+    // Apply Exponential Moving Average (EMA) smoothing for jitter-free tracking
     this.smoothedX = this.smoothingAlpha * rawX + (1 - this.smoothingAlpha) * this.smoothedX;
     this.smoothedY = this.smoothingAlpha * rawY + (1 - this.smoothingAlpha) * this.smoothedY;
 
@@ -101,7 +134,6 @@ export class MotionSensorService {
     if (event.beta === null || event.gamma === null) return;
 
     if (!this.isCalibrated) {
-      // Auto initial center
       this.calibrate(event.beta, event.gamma);
     }
 
@@ -116,7 +148,7 @@ export class MotionSensorService {
       try {
         navigator.vibrate(durationMs);
       } catch {
-        // Ignored on unsupported devices
+        // Ignored
       }
     }
   }

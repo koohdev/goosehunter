@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Crosshair, RotateCcw, Zap, AlertTriangle, ShieldCheck, RefreshCw } from 'lucide-react';
+import { Crosshair, RotateCcw, Zap, AlertTriangle, RefreshCw, Smartphone } from 'lucide-react';
 import { motionSensor } from '@/lib/motion-sensor';
 import { getSocket } from '@/lib/socket-client';
 import { audioManager } from '@/engine/AudioManager';
@@ -98,7 +98,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
     }
   };
 
-  // 3. Calibrate center origin
+  // 3. Calibrate center origin (Supports Landscape Gun Grip & Portrait)
   const handleCalibrate = useCallback(() => {
     if (typeof window === 'undefined') return;
 
@@ -137,15 +137,15 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
     window.addEventListener('deviceorientation', onOrientation, { passive: true, once: true });
   }, [sessionId]);
 
-  // 4. Fire Trigger
+  // 4. Fire Trigger on screen tap
   const handleTriggerPress = (e: React.TouchEvent | React.MouseEvent) => {
     e.preventDefault();
     if (controllerState !== 'READY') return;
 
     setIsFiring(true);
-    setTimeout(() => setIsFiring(false), 100);
+    setTimeout(() => setIsFiring(false), 90);
 
-    motionSensor.triggerHaptic(40);
+    motionSensor.triggerHaptic(45);
     audioManager.playSound('click');
 
     const socket = getSocket();
@@ -174,9 +174,9 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
   };
 
   return (
-    <div className="fixed inset-0 bg-zinc-950 text-zinc-200 font-mono flex flex-col justify-between select-none touch-none overflow-hidden p-4">
-      {/* Top Controller Bar */}
-      <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+    <div className="fixed inset-0 bg-zinc-950 text-zinc-200 font-mono flex flex-col justify-between select-none touch-none overflow-hidden p-3 sm:p-4">
+      {/* Top Controller Status Bar */}
+      <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`} />
           <span className="text-xs font-semibold text-zinc-300">ROOM: {sessionId}</span>
@@ -188,7 +188,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
         {controllerState === 'READY' && (
           <button
             onClick={handleCalibrate}
-            className="flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 active:scale-95 text-xs text-amber-400 font-semibold px-3 py-1.5 rounded shadow"
+            className="flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 active:scale-95 text-xs text-amber-400 font-semibold px-3 py-1 rounded shadow cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>RE-CENTER</span>
@@ -198,21 +198,21 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
 
       {/* Screen 1: Request Sensor Permissions */}
       {controllerState === 'PERMISSION' && (
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-6">
-          <div className="w-16 h-16 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-300 shadow">
-            <Zap className="w-8 h-8 text-amber-400" />
+        <div className="flex-1 flex flex-col items-center justify-center text-center p-4 gap-4 sm:gap-6">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-300 shadow">
+            <Zap className="w-7 h-7 sm:w-8 sm:h-8 text-amber-400" />
           </div>
 
           <div>
-            <h2 className="text-xl font-bold text-zinc-100 mb-2">MOTION LIGHT GUN</h2>
+            <h2 className="text-lg sm:text-xl font-bold text-zinc-100 mb-1.5">LANDSCAPE GUN CONTROLLER</h2>
             <p className="text-zinc-400 text-xs max-w-xs mx-auto leading-relaxed">
-              Enable gyroscope access to control the aiming reticle by moving your phone.
+              Hold your phone horizontally in a landscape gun grip. Tilt to aim and tap anywhere on the screen to fire.
             </p>
           </div>
 
           <button
             onClick={handleRequestPermission}
-            className="w-full max-w-xs py-3.5 bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-100 font-bold text-xs tracking-wider rounded-lg shadow border border-zinc-600 uppercase cursor-pointer"
+            className="w-full max-w-xs py-3 bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-100 font-bold text-xs tracking-wider rounded-lg shadow border border-zinc-600 uppercase cursor-pointer"
           >
             Enable Motion Sensors
           </button>
@@ -221,69 +221,69 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
 
       {/* Screen 2: Point & Calibrate */}
       {controllerState === 'CALIBRATION' && (
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-6">
-          <div className="w-20 h-20 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-amber-400 shadow">
-            <Crosshair className="w-10 h-10" />
+        <div className="flex-1 flex flex-col items-center justify-center text-center p-4 gap-4 sm:gap-6">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-amber-400 shadow">
+            <Crosshair className="w-8 h-8 sm:w-10 sm:h-10" />
           </div>
 
           <div>
-            <h2 className="text-xl font-bold text-zinc-100 mb-2">CALIBRATION</h2>
-            <p className="text-zinc-400 text-xs max-w-xs mx-auto leading-relaxed">
-              Point phone directly at the center of the screen, then tap Calibrate below.
+            <h2 className="text-lg sm:text-xl font-bold text-zinc-100 mb-1.5">CALIBRATE AIM</h2>
+            <p className="text-zinc-400 text-xs max-w-sm mx-auto leading-relaxed">
+              Hold phone in horizontal landscape grip, point directly at the <span className="text-amber-400 font-bold">center of the screen</span>, then tap Calibrate below.
             </p>
           </div>
 
           <button
             onClick={handleCalibrate}
-            className="w-full max-w-xs py-3.5 bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-100 font-bold text-xs tracking-wider rounded-lg shadow border border-zinc-600 uppercase cursor-pointer"
+            className="w-full max-w-xs py-3 bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-100 font-bold text-xs tracking-wider rounded-lg shadow border border-zinc-600 uppercase cursor-pointer"
           >
             Calibrate Center Origin
           </button>
         </div>
       )}
 
-      {/* Screen 3: Active Gameplay Gun Controller */}
+      {/* Screen 3: Active Gameplay Gun Controller (Full Touch Trigger Surface) */}
       {controllerState === 'READY' && (
-        <div className="flex-1 flex flex-col justify-between py-2 gap-4">
+        <div className="flex-1 flex flex-col justify-between py-1.5 gap-2 sm:gap-3">
           {/* Controller HUD Pill */}
-          <div className="grid grid-cols-3 gap-2 bg-zinc-900/90 border border-zinc-800 rounded-lg p-2.5 text-center text-xs">
+          <div className="grid grid-cols-3 gap-2 bg-zinc-900/90 border border-zinc-800 rounded-lg p-2 text-center text-xs">
             <div>
               <div className="text-[10px] text-zinc-500 uppercase font-semibold">LEVEL</div>
-              <div className="text-sm font-bold text-zinc-200">{gameState.level}</div>
+              <div className="text-xs sm:text-sm font-bold text-zinc-200">{gameState.level}</div>
             </div>
             <div>
               <div className="text-[10px] text-zinc-500 uppercase font-semibold">BULLETS</div>
-              <div className="text-sm font-bold text-amber-400">{gameState.bullets}</div>
+              <div className="text-xs sm:text-sm font-bold text-amber-400">{gameState.bullets}</div>
             </div>
             <div>
               <div className="text-[10px] text-zinc-500 uppercase font-semibold">SCORE</div>
-              <div className="text-sm font-bold text-emerald-400">{gameState.score}</div>
+              <div className="text-xs sm:text-sm font-bold text-emerald-400">{gameState.score}</div>
             </div>
           </div>
 
-          {/* Large Touch Trigger Surface */}
+          {/* Large Landscape Touch Trigger Surface */}
           <div
             onTouchStart={handleTriggerPress}
             onMouseDown={handleTriggerPress}
-            className={`flex-1 rounded-xl border-2 transition-all duration-75 flex flex-col items-center justify-center cursor-pointer active:scale-[0.99] ${
+            className={`flex-1 rounded-xl border-2 transition-all duration-75 flex flex-col items-center justify-center cursor-pointer active:scale-[0.99] select-none touch-none ${
               isFiring
-                ? 'bg-zinc-800 border-zinc-500 shadow-md'
-                : 'bg-zinc-900/80 border-zinc-800'
+                ? 'bg-zinc-800 border-zinc-400 shadow-md'
+                : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'
             }`}
           >
             <div
-              className={`p-5 rounded-full border transition-all ${
-                isFiring ? 'border-zinc-300 bg-zinc-700' : 'border-zinc-700 bg-zinc-950'
+              className={`p-4 sm:p-5 rounded-full border transition-all ${
+                isFiring ? 'border-zinc-200 bg-zinc-700' : 'border-zinc-700 bg-zinc-950'
               }`}
             >
-              <Crosshair className={`w-12 h-12 ${isFiring ? 'text-zinc-100' : 'text-zinc-400'}`} />
+              <Crosshair className={`w-10 h-10 sm:w-12 sm:h-12 ${isFiring ? 'text-zinc-100' : 'text-zinc-400'}`} />
             </div>
 
-            <div className="mt-3 font-bold tracking-wider text-xs text-zinc-300 uppercase">
-              {isFiring ? 'FIRED' : 'TAP TO FIRE'}
+            <div className="mt-2.5 font-bold tracking-wider text-xs sm:text-sm text-zinc-300 uppercase">
+              {isFiring ? 'SHOT FIRED' : 'TAP SCREEN TO SHOOT'}
             </div>
 
-            <div className="text-[10px] text-zinc-500 mt-1">
+            <div className="text-[10px] text-zinc-500 mt-0.5">
               Aim X: {currentAim.x} | Y: {currentAim.y}
             </div>
           </div>
@@ -315,13 +315,13 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
 
       {/* Screen 4: Error State */}
       {controllerState === 'ERROR' && (
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-4">
+        <div className="flex-1 flex flex-col items-center justify-center text-center p-4 gap-3.5">
           <AlertTriangle className="w-10 h-10 text-amber-500" />
-          <h3 className="text-base font-bold text-zinc-200">Connection Error</h3>
+          <h3 className="text-sm font-bold text-zinc-200">Connection Error</h3>
           <p className="text-zinc-400 text-xs max-w-xs">{errorMessage || 'Unable to connect to game session.'}</p>
           <button
             onClick={handleRetryJoin}
-            className="flex items-center gap-1.5 px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-zinc-100 font-bold rounded-lg text-xs cursor-pointer active:scale-95 transition"
+            className="flex items-center gap-1.5 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-zinc-100 font-bold rounded-lg text-xs cursor-pointer active:scale-95 transition"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Retry Connection</span>
@@ -330,8 +330,8 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
       )}
 
       {/* Footer Info */}
-      <div className="text-center text-[10px] text-zinc-500 pt-2 border-t border-zinc-900 flex items-center justify-center gap-1">
-        <ShieldCheck className="w-3 h-3 text-zinc-400" /> Web Motion Light Gun • Goose Hunter
+      <div className="text-center text-[10px] text-zinc-500 pt-1.5 border-t border-zinc-900 flex items-center justify-center gap-1.5">
+        <Smartphone className="w-3 h-3 text-zinc-400" /> Landscape Gun Grip • Tap anywhere to fire
       </div>
     </div>
   );
