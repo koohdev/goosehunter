@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Crosshair, RotateCcw, Smartphone, Gamepad2 } from 'lucide-react';
+import { Crosshair, RotateCcw, Smartphone, Gamepad2, Sliders, Volume2, VolumeX } from 'lucide-react';
 import { motionSensor } from '@/lib/motion-sensor';
 import { getControllerChannel } from '@/lib/realtime-client';
 import { audioManager } from '@/engine/AudioManager';
@@ -20,12 +20,22 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
   const [roundStatus, setRoundStatus] = useState<'PLAYING' | 'ROUND_WON' | 'GAME_OVER' | 'LOBBY'>('LOBBY');
   const [gameState, setGameState] = useState({ score: 0, bullets: 10, level: 1 });
   const [gyroPermissionGranted, setGyroPermissionGranted] = useState(false);
+  const [sensitivity, setSensitivity] = useState<'LOW' | 'NORMAL' | 'HIGH'>('NORMAL');
+  const [invertY, setInvertY] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
 
   const touchpadRef = useRef<HTMLDivElement | null>(null);
   const lastAimRef = useRef({ x: 0, y: 0 });
   const aimThrottleRef = useRef<number>(0);
   const lastShotTimeRef = useRef<number>(0);
   const touchStartPosRef = useRef<{ x: number; y: number; time: number } | null>(null);
+
+  // Sync Gyro config
+  useEffect(() => {
+    motionSensor.setSensitivityPreset(sensitivity);
+    motionSensor.invertY = invertY;
+  }, [sensitivity, invertY]);
 
   // 1. Realtime P2P connection & Room join
   useEffect(() => {
@@ -101,17 +111,19 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
     [sessionId]
   );
 
-  // 2. Fire Trigger Action (with debounce deduplication)
+  // 2. Fire Trigger Action (Single-shot deduplication)
   const fireShot = useCallback(() => {
     const now = Date.now();
-    if (now - lastShotTimeRef.current < 150) return;
+    if (now - lastShotTimeRef.current < 140) return;
     lastShotTimeRef.current = now;
 
     setIsFiring(true);
     setTimeout(() => setIsFiring(false), 90);
 
     motionSensor.triggerHaptic(45);
-    audioManager.playSound('click');
+    if (soundEnabled) {
+      audioManager.playSound('click');
+    }
 
     const channel = getControllerChannel(sessionId);
     channel.emit('controller:trigger', {
@@ -120,7 +132,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
       y: lastAimRef.current.y,
       timestamp: now,
     });
-  }, [sessionId]);
+  }, [sessionId, soundEnabled]);
 
   // 3. Gyroscope setup & calibration
   const handleEnableGyro = async () => {
@@ -175,7 +187,6 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
     const touch = e.touches[0];
     if (!touch) return;
 
-    // Calculate normalized [-1, 1] relative to touchpad area
     const touchX = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
     const touchY = ((touch.clientY - rect.top) / rect.height) * 2 - 1;
 
@@ -202,8 +213,8 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
         const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
         const dt = Date.now() - touchStartPosRef.current.time;
 
-        // If quick tap with small movement (<15px and <300ms), trigger shot
-        if (dx < 15 && dy < 15 && dt < 300) {
+        // Quick tap (<20px movement and <280ms duration) fires shot
+        if (dx < 20 && dy < 20 && dt < 280) {
           fireShot();
         }
       }
@@ -219,70 +230,128 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
 
   return (
     <div className="fixed inset-0 bg-zinc-950 text-zinc-200 font-mono flex flex-col justify-between select-none touch-none overflow-hidden p-3 sm:p-4">
-      {/* Top Header: Room & Aim Mode Switcher */}
+      {/* Top Header: Connection, Settings & Mode Switcher */}
       <div className="flex flex-col gap-2 border-b border-zinc-800 pb-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`} />
-            <span className="text-xs font-semibold text-zinc-300">ROOM: {sessionId}</span>
+            <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-rose-500 animate-pulse'}`} />
+            <span className="text-xs font-bold text-zinc-200 tracking-wider">ROOM: {sessionId}</span>
           </div>
 
-          {aimMode === 'GYRO' && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleCalibrateGyro}
-              className="flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 active:scale-95 text-xs text-amber-400 font-semibold px-2.5 py-1 rounded shadow cursor-pointer"
+              onClick={() => setSoundEnabled((prev) => !prev)}
+              className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 active:scale-95 cursor-pointer"
+              title="Toggle Sound"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>RE-CENTER</span>
+              {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5 text-zinc-600" />}
             </button>
-          )}
+
+            <button
+              onClick={() => setShowSettings((prev) => !prev)}
+              className="flex items-center gap-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 active:scale-95 text-xs text-zinc-300 px-2 py-1 rounded-lg shadow cursor-pointer"
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span className="text-[10px] uppercase font-bold">{sensitivity}</span>
+            </button>
+
+            {aimMode === 'GYRO' && (
+              <button
+                onClick={handleCalibrateGyro}
+                className="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 active:scale-95 text-xs text-amber-400 font-bold px-2.5 py-1 rounded-lg shadow cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>CENTER</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Big Mode Switcher Tabs */}
-        <div className="grid grid-cols-2 gap-2 bg-zinc-900/90 p-1 rounded-lg border border-zinc-800">
+        {/* Quick Sensitivity / Invert Drawer */}
+        {showSettings && (
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3 flex flex-col gap-2.5 text-xs shadow-2xl animate-in fade-in duration-150 z-50">
+            <div className="flex items-center justify-between text-[11px] font-bold text-zinc-300 border-b border-zinc-800 pb-1">
+              <span>CONTROLLER SENSITIVITY</span>
+              <button onClick={() => setShowSettings(false)} className="text-zinc-500 hover:text-zinc-300 text-xs">
+                Close
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              {(['LOW', 'NORMAL', 'HIGH'] as const).map((lvl) => (
+                <button
+                  key={lvl}
+                  onClick={() => setSensitivity(lvl)}
+                  className={`py-1.5 rounded-lg text-[10px] font-bold border transition ${
+                    sensitivity === lvl
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow'
+                      : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                  }`}
+                >
+                  {lvl}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-1 border-t border-zinc-800">
+              <span className="text-[10px] text-zinc-400">Invert Vertical (Y)</span>
+              <button
+                onClick={() => setInvertY((prev) => !prev)}
+                className={`px-2.5 py-0.5 rounded text-[10px] font-bold border ${
+                  invertY ? 'bg-amber-500/20 border-amber-400 text-amber-300' : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                }`}
+              >
+                {invertY ? 'ON' : 'OFF'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Big Switcher Tabs */}
+        <div className="grid grid-cols-2 gap-2 bg-zinc-900/90 p-1 rounded-xl border border-zinc-800">
           <button
             onClick={() => handleSelectMode('TOUCHPAD')}
-            className={`flex items-center justify-center gap-2 py-2 rounded-md font-bold text-xs transition cursor-pointer ${
+            className={`flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-xs transition cursor-pointer ${
               aimMode === 'TOUCHPAD'
-                ? 'bg-emerald-500 text-black shadow-md'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-black shadow-md font-extrabold'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Gamepad2 className="w-4 h-4" />
-            <span>Thumb Touchpad</span>
+            <span>Thumb Touchpad V2</span>
           </button>
 
           <button
             onClick={() => handleSelectMode('GYRO')}
-            className={`flex items-center justify-center gap-2 py-2 rounded-md font-bold text-xs transition cursor-pointer ${
+            className={`flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-xs transition cursor-pointer ${
               aimMode === 'GYRO'
-                ? 'bg-amber-500 text-black shadow-md'
+                ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-black shadow-md font-extrabold'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Smartphone className="w-4 h-4" />
-            <span>Tilt Gyro</span>
+            <span>Tilt Gyro V2</span>
           </button>
         </div>
       </div>
 
       {/* Game HUD Pill */}
-      <div className="grid grid-cols-3 gap-2 bg-zinc-900/90 border border-zinc-800 rounded-lg p-2 text-center text-xs my-2">
+      <div className="grid grid-cols-3 gap-2 bg-zinc-900/90 border border-zinc-800 rounded-xl p-2.5 text-center text-xs my-2 shadow-inner">
         <div>
-          <div className="text-[10px] text-zinc-500 uppercase font-semibold">LEVEL</div>
-          <div className="text-xs sm:text-sm font-bold text-zinc-200">{gameState.level}</div>
+          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">LEVEL</div>
+          <div className="text-sm font-extrabold text-zinc-200">{gameState.level}</div>
         </div>
         <div>
-          <div className="text-[10px] text-zinc-500 uppercase font-semibold">BULLETS</div>
-          <div className="text-xs sm:text-sm font-bold text-amber-400">{gameState.bullets}</div>
+          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">BULLETS</div>
+          <div className="text-sm font-extrabold text-amber-400">{gameState.bullets}</div>
         </div>
         <div>
-          <div className="text-[10px] text-zinc-500 uppercase font-semibold">SCORE</div>
-          <div className="text-xs sm:text-sm font-bold text-emerald-400">{gameState.score}</div>
+          <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">SCORE</div>
+          <div className="text-sm font-extrabold text-emerald-400">{gameState.score}</div>
         </div>
       </div>
 
-      {/* Main Touchpad / Gyro Aiming Surface */}
+      {/* Main Touchpad / Gyro Aiming Arena */}
       <div className="flex-1 flex flex-col gap-2 relative">
         <div
           ref={touchpadRef}
@@ -290,36 +359,41 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
           onClick={fireShot}
-          className={`flex-1 rounded-xl border-2 transition-all duration-75 flex flex-col items-center justify-center cursor-crosshair select-none touch-none relative overflow-hidden ${
+          className={`flex-1 rounded-2xl border-2 transition-all duration-75 flex flex-col items-center justify-center cursor-crosshair select-none touch-none relative overflow-hidden shadow-2xl ${
             isFiring
-              ? 'bg-zinc-800 border-zinc-400 shadow-lg'
-              : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'
+              ? 'bg-zinc-800/90 border-amber-400/80 shadow-[0_0_20px_rgba(251,191,36,0.3)]'
+              : 'bg-gradient-to-b from-zinc-900/90 to-zinc-950/90 border-zinc-800 hover:border-zinc-700'
           }`}
         >
-          {/* Subtle Grid Lines on Touchpad */}
-          <div className="absolute inset-0 opacity-10 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+          {/* Subtle Radar Grid */}
+          <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#ffffff22_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
 
-          {/* Target Crosshair following thumb / gyro */}
+          {/* Center Reference Cross */}
+          <div className="absolute w-8 h-8 border border-zinc-700/40 rounded-full pointer-events-none opacity-50" />
+          <div className="absolute w-20 h-20 border border-zinc-800/40 rounded-full pointer-events-none opacity-40" />
+
+          {/* Dynamic Laser Reticle Following Thumb / Gyro */}
           <div
-            className="absolute w-12 h-12 rounded-full border-2 border-amber-400/80 bg-amber-400/20 pointer-events-none transition-transform duration-75 flex items-center justify-center shadow-lg"
+            className="absolute w-14 h-14 rounded-full border-2 border-amber-400/90 bg-amber-400/20 pointer-events-none transition-transform duration-75 flex items-center justify-center shadow-[0_0_15px_rgba(251,191,36,0.5)]"
             style={{
-              transform: `translate(${currentAim.x * 90}px, ${currentAim.y * 65}px)`,
+              transform: `translate(${currentAim.x * 105}px, ${currentAim.y * 75}px)`,
             }}
           >
-            <Crosshair className="w-6 h-6 text-amber-400" />
+            <div className="w-2 h-2 rounded-full bg-amber-400 shadow-glow" />
+            <Crosshair className="w-8 h-8 text-amber-300/80 absolute" />
           </div>
 
-          <div className="z-10 text-center pointer-events-none">
-            <div className="font-bold tracking-wider text-xs sm:text-sm text-zinc-300 uppercase">
+          <div className="z-10 text-center pointer-events-none px-4">
+            <div className="font-extrabold tracking-wider text-xs sm:text-sm text-zinc-200 uppercase drop-shadow">
               {aimMode === 'TOUCHPAD' ? 'SLIDE THUMB TO AIM • TAP TO SHOOT' : 'TILT PHONE TO AIM • TAP TO SHOOT'}
             </div>
-            <div className="text-[11px] text-zinc-400 mt-1">
-              Aim X: {currentAim.x} | Y: {currentAim.y}
+            <div className="text-[10px] font-mono text-zinc-400 mt-1">
+              Aim Coordinates: [{currentAim.x.toFixed(2)}, {currentAim.y.toFixed(2)}]
             </div>
           </div>
         </div>
 
-        {/* Dedicated Tap-to-Shoot Button for extra comfort */}
+        {/* Dedicated Arcade Trigger Button */}
         <button
           onTouchStart={(e) => {
             e.stopPropagation();
@@ -329,10 +403,10 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
             e.stopPropagation();
             fireShot();
           }}
-          className={`w-full py-4 rounded-xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 border shadow-lg transition active:scale-95 cursor-pointer ${
+          className={`w-full py-4 rounded-xl font-extrabold text-sm sm:text-base uppercase tracking-widest flex items-center justify-center gap-2.5 border shadow-xl transition active:scale-95 cursor-pointer ${
             isFiring
-              ? 'bg-amber-400 text-black border-amber-300'
-              : 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500'
+              ? 'bg-amber-400 text-black border-amber-300 shadow-[0_0_20px_rgba(251,191,36,0.8)]'
+              : 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white border-rose-500 shadow-rose-950/40'
           }`}
         >
           <Crosshair className="w-5 h-5" />
@@ -342,10 +416,10 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
 
       {/* Round Won / Game Over Navigation Actions */}
       {roundStatus === 'ROUND_WON' && (
-        <div className="mt-2">
+        <div className="mt-2 animate-in fade-in slide-in-from-bottom-2">
           <button
             onClick={() => sendGameCommand('NEXT_LEVEL')}
-            className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs rounded-lg uppercase tracking-wider cursor-pointer active:scale-95 shadow"
+            className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-black font-extrabold text-xs rounded-xl uppercase tracking-wider cursor-pointer active:scale-95 shadow-lg shadow-emerald-950/50"
           >
             NEXT LEVEL
           </button>
@@ -353,10 +427,10 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
       )}
 
       {roundStatus === 'GAME_OVER' && (
-        <div className="mt-2">
+        <div className="mt-2 animate-in fade-in slide-in-from-bottom-2">
           <button
             onClick={() => sendGameCommand('RESTART')}
-            className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs rounded-lg uppercase tracking-wider cursor-pointer active:scale-95 border border-zinc-600 shadow"
+            className="w-full py-3.5 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs rounded-xl uppercase tracking-wider cursor-pointer active:scale-95 border border-zinc-600 shadow-lg"
           >
             RESTART GAME
           </button>
@@ -365,7 +439,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
 
       {/* Footer Info */}
       <div className="text-center text-[10px] text-zinc-500 pt-2 border-t border-zinc-900 flex items-center justify-center gap-1.5">
-        <span>Goose Hunter Mobile Controller</span>
+        <span>Goose Hunter Mobile Controller V2</span>
       </div>
     </div>
   );

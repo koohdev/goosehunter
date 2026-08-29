@@ -8,9 +8,11 @@ function wrapAngle(deg: number): number {
 }
 
 export class MotionSensorService {
-  private sensitivityX: number = 22; // Degrees to reach left/right edge
-  private sensitivityY: number = 18; // Degrees to reach top/bottom edge
-  private smoothingAlpha: number = 0.8;
+  public sensitivityX: number = 22; // Degrees to reach horizontal border
+  public sensitivityY: number = 18; // Degrees to reach vertical border
+  public smoothingAlpha: number = 0.75; // Low-latency EMA filter
+  public invertY: boolean = false;
+  public invertX: boolean = false;
 
   private centerAlpha: number = 0;
   private centerBeta: number = 0;
@@ -21,6 +23,22 @@ export class MotionSensorService {
   private isCalibrated: boolean = false;
   private isListening: boolean = false;
   private listenerCallback: ((coords: AimCoordinates) => void) | null = null;
+
+  public setSensitivityPreset(preset: 'LOW' | 'NORMAL' | 'HIGH') {
+    if (preset === 'LOW') {
+      this.sensitivityX = 30;
+      this.sensitivityY = 24;
+      this.smoothingAlpha = 0.65;
+    } else if (preset === 'NORMAL') {
+      this.sensitivityX = 22;
+      this.sensitivityY = 18;
+      this.smoothingAlpha = 0.75;
+    } else if (preset === 'HIGH') {
+      this.sensitivityX = 15;
+      this.sensitivityY = 12;
+      this.smoothingAlpha = 0.85;
+    }
+  }
 
   public async requestPermissions(): Promise<boolean> {
     if (typeof window === 'undefined') return false;
@@ -61,7 +79,7 @@ export class MotionSensorService {
     const curAlpha = hasAlpha ? alpha : 0;
 
     let deltaX = 0;
-    const deltaY = -(beta - this.centerBeta);
+    let deltaY = -(beta - this.centerBeta);
 
     if (hasAlpha) {
       const radBeta = (beta * Math.PI) / 180;
@@ -71,14 +89,27 @@ export class MotionSensorService {
       deltaX = gamma - this.centerGamma;
     }
 
-    let rawX = deltaX / this.sensitivityX;
-    let rawY = deltaY / this.sensitivityY;
+    if (this.invertX) deltaX = -deltaX;
+    if (this.invertY) deltaY = -deltaY;
+
+    // Deadband tremor filter (0.15 deg)
+    if (Math.abs(deltaX) < 0.15) deltaX = 0;
+    if (Math.abs(deltaY) < 0.15) deltaY = 0;
+
+    let rawX = deltaX / Math.max(5, this.sensitivityX);
+    let rawY = deltaY / Math.max(5, this.sensitivityY);
+
+    // Subtle power curve for precision center aim + easy edge reach
+    const signX = Math.sign(rawX);
+    const signY = Math.sign(rawY);
+    rawX = signX * Math.pow(Math.min(1, Math.abs(rawX)), 1.08);
+    rawY = signY * Math.pow(Math.min(1, Math.abs(rawY)), 1.08);
 
     // Clamp between -1.0 and 1.0
     rawX = Math.max(-1, Math.min(1, rawX));
     rawY = Math.max(-1, Math.min(1, rawY));
 
-    // Smoothing
+    // Low-pass EMA smoothing
     const a = this.smoothingAlpha;
     this.smoothedX = a * rawX + (1 - a) * this.smoothedX;
     this.smoothedY = a * rawY + (1 - a) * this.smoothedY;
