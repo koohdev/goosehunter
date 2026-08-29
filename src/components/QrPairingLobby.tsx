@@ -19,40 +19,36 @@ export const QrPairingLobby: React.FC<QrPairingLobbyProps> = ({
 }) => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
-  const [resolvedOrigin, setResolvedOrigin] = useState<string>('');
+  const [networkHostUrl, setNetworkHostUrl] = useState<string>('');
   const [detectedIps, setDetectedIps] = useState<{ name: string; address: string }[]>([]);
 
   // Fetch local network IP for accurate cross-device pairing
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    let base = serverHostUrl || window.location.origin;
-
-    // If accessed via localhost, query the server's LAN IP address
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       fetch('/api/network-info')
         .then((res) => res.json())
         .then((data) => {
           if (data && data.hostUrl && data.primaryIp !== 'localhost') {
-            setResolvedOrigin(data.hostUrl);
+            setNetworkHostUrl(data.hostUrl);
             if (data.ips) setDetectedIps(data.ips);
-          } else {
-            setResolvedOrigin(window.location.origin);
           }
         })
         .catch(() => {
-          setResolvedOrigin(window.location.origin);
+          // Fallback to origin
         });
-    } else {
-      setResolvedOrigin(base);
     }
-  }, [serverHostUrl]);
+  }, []);
+
+  const activeOrigin =
+    serverHostUrl ||
+    networkHostUrl ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
 
   const joinUrl =
-    resolvedOrigin && sessionId
-      ? `${resolvedOrigin}/controller?session=${sessionId}`
-      : typeof window !== 'undefined' && sessionId
-      ? `${window.location.origin}/controller?session=${sessionId}`
+    activeOrigin && sessionId
+      ? `${activeOrigin}/controller?session=${sessionId}`
       : '';
 
   useEffect(() => {
@@ -204,7 +200,7 @@ export const QrPairingLobby: React.FC<QrPairingLobbyProps> = ({
             </div>
             <button
               onClick={handleCopyLink}
-              className="flex items-center gap-1 text-zinc-300 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 px-2 py-1 rounded text-[10px] uppercase font-bold shrink-0 transition"
+              className="flex items-center gap-1 text-zinc-300 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 px-2 py-1 rounded text-[10px] uppercase font-bold shrink-0 transition cursor-pointer"
               title="Copy controller URL"
             >
               {copied ? (
@@ -227,8 +223,8 @@ export const QrPairingLobby: React.FC<QrPairingLobbyProps> = ({
               {detectedIps.map((ip) => (
                 <button
                   key={ip.address}
-                  onClick={() => setResolvedOrigin(`http://${ip.address}:3000`)}
-                  className="px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300 text-[10px]"
+                  onClick={() => setNetworkHostUrl(`http://${ip.address}:3000`)}
+                  className="px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300 text-[10px] cursor-pointer"
                 >
                   {ip.name}: {ip.address}
                 </button>
