@@ -27,13 +27,30 @@ export class GooseManager {
     if (typeof window === 'undefined') return;
 
     const spritePaths: { key: string; src: string }[] = [
+      // Flying flapping frames
       { key: 'goose_black_1', src: '/images/goose-black-v2-1.png' },
       { key: 'goose_black_2', src: '/images/goose-black-v2-2.png' },
       { key: 'goose_blue_1', src: '/images/goose-blue-v2-1.png' },
       { key: 'goose_blue_2', src: '/images/goose-blue-v2-2.png' },
       { key: 'goose_red_1', src: '/images/goose-red-v2-1.png' },
       { key: 'goose_red_2', src: '/images/goose-red-v2-2.png' },
-      { key: 'goose_hit', src: '/images/goose-hit-v2.png' },
+      
+      // Hit & Dying frames (Black)
+      { key: 'goose_black_hit', src: '/images/goose-hit-frame1.png' },
+      { key: 'goose_black_fall_1', src: '/images/goose-falling-frame1.png' },
+      { key: 'goose_black_fall_2', src: '/images/goose-falling-frame2.png' },
+
+      // Hit & Dying frames (Blue)
+      { key: 'goose_blue_hit', src: '/images/goose-blue-hit.png' },
+      { key: 'goose_blue_fall_1', src: '/images/goose-blue-falling-1.png' },
+      { key: 'goose_blue_fall_2', src: '/images/goose-blue-falling-2.png' },
+
+      // Hit & Dying frames (Red)
+      { key: 'goose_red_hit', src: '/images/goose-red-hit.png' },
+      { key: 'goose_red_fall_1', src: '/images/goose-red-falling-1.png' },
+      { key: 'goose_red_fall_2', src: '/images/goose-red-falling-2.png' },
+
+      // VFX
       { key: 'goose_feather', src: '/images/goose-feather.png' },
     ];
 
@@ -90,7 +107,7 @@ export class GooseManager {
         // Top ceiling escape or bounce
         if (goose.y < 25) {
           goose.y = 25;
-          goose.vy = Math.abs(goose.vy) * 0.85; // change flight angle
+          goose.vy = Math.abs(goose.vy) * 0.85;
         }
 
         // Bottom floor bound
@@ -110,19 +127,45 @@ export class GooseManager {
         goose.flightDuration += deltaTime;
         if (goose.flightDuration > 14) {
           goose.state = 'ESCAPED';
-          goose.vy = -4.5; // Fly away into clouds
+          goose.vy = -4.5;
         }
       } else if (goose.state === 'HIT') {
-        // Pause briefly in stunned state
+        // Pause briefly in shocked / dizzy state with wobble
         goose.frameTimer += deltaTime;
         if (goose.frameTimer > 0.28) {
           goose.state = 'FALLING';
+          goose.frameIndex = 0;
+          goose.frameTimer = 0;
           goose.vy = 2.5; // Begin fall
         }
       } else if (goose.state === 'FALLING') {
-        // Accelerate downwards with gravity
-        goose.vy += 9.8 * deltaTime * 0.75;
+        // Accelerate downwards with gravity & tumbling animation
+        goose.vy += 9.8 * deltaTime * 0.8;
         goose.y += goose.vy * deltaTime * 60;
+        goose.x += goose.vx * 0.2 * deltaTime * 60; // slight drift
+
+        // Cycle dying tumbling frames
+        goose.frameTimer += deltaTime;
+        if (goose.frameTimer > 0.12) {
+          goose.frameTimer = 0;
+          goose.frameIndex = (goose.frameIndex + 1) % 2;
+        }
+
+        // Occasionally shed a trailing feather while falling
+        if (Math.random() < 0.12) {
+          this.feathers.push({
+            x: goose.x + goose.width / 2,
+            y: goose.y + goose.height / 2,
+            vx: (Math.random() - 0.5) * 1.5,
+            vy: -1.0,
+            angle: Math.random() * Math.PI * 2,
+            angularVelocity: (Math.random() - 0.5) * 4,
+            scale: Math.random() * 0.3 + 0.2,
+            alpha: 0.9,
+            life: 0,
+            maxLife: 0.8,
+          });
+        }
 
         // Remove when hitting ground
         if (goose.y > height - 60) {
@@ -147,14 +190,13 @@ export class GooseManager {
 
       f.x += (f.vx + Math.sin(f.life * 6) * 1.5) * deltaTime * 60;
       f.y += f.vy * deltaTime * 60;
-      f.vy += 1.8 * deltaTime; // light drift gravity
+      f.vy += 1.8 * deltaTime; // drift gravity
       f.angle += f.angularVelocity * deltaTime;
       f.alpha = Math.max(0, 1 - f.life / f.maxLife);
     }
   }
 
   private spawnGoose(width: number, height: number, config: LevelConfig) {
-    // Select type based on level allowed types
     const type = config.allowedTypes[Math.floor(Math.random() * config.allowedTypes.length)];
 
     let points = 5;
@@ -172,7 +214,7 @@ export class GooseManager {
     const startX = direction === 1 ? 40 + Math.random() * 80 : width - 140 - Math.random() * 80;
     const startY = height - 170 - Math.random() * 80;
 
-    const angle = (Math.random() * 35 + 25) * (Math.PI / 180); // 25 to 60 degrees upward
+    const angle = (Math.random() * 35 + 25) * (Math.PI / 180);
     const vx = Math.cos(angle) * speed * direction;
     const vy = -Math.sin(angle) * speed;
 
@@ -198,12 +240,10 @@ export class GooseManager {
   }
 
   public checkHit(aimX: number, aimY: number): { hit: boolean; goose?: GooseTarget } {
-    // Check collision from frontmost active flying geese
     for (let i = this.geese.length - 1; i >= 0; i--) {
       const goose = this.geese[i];
       if (goose.state !== 'FLYING') continue;
 
-      // Expanded hitbox for responsive arcade feel (+14px tolerance)
       const hitPadding = 14;
       const left = goose.x - hitPadding;
       const right = goose.x + goose.width + hitPadding;
@@ -214,7 +254,7 @@ export class GooseManager {
         goose.state = 'HIT';
         goose.frameTimer = 0;
 
-        // Spawn feather explosion burst!
+        // Spawn feather explosion burst
         this.spawnFeathers(goose.x + goose.width / 2, goose.y + goose.height / 2);
 
         return { hit: true, goose };
@@ -224,7 +264,7 @@ export class GooseManager {
   }
 
   private spawnFeathers(cx: number, cy: number) {
-    const count = 10 + Math.floor(Math.random() * 6);
+    const count = 12 + Math.floor(Math.random() * 6);
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * 4 + 1.5;
@@ -258,11 +298,13 @@ export class GooseManager {
         ctx.scale(-1, 1);
       }
 
-      if (goose.state === 'FALLING') {
-        ctx.rotate(Math.PI / 2);
+      if (goose.state === 'HIT') {
+        // Shock wobble
+        const wobble = Math.sin(goose.frameTimer * 40) * 0.15;
+        ctx.rotate(wobble);
       }
 
-      // Draw Goose Sprite or Retro Vector
+      // Draw Goose Sprite
       this.drawGooseSprite(ctx, goose);
 
       ctx.restore();
@@ -282,7 +324,6 @@ export class GooseManager {
         const fh = 32;
         ctx.drawImage(featherSprite, -fw / 2, -fh / 2, fw, fh);
       } else {
-        // Fallback procedural feather
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.ellipse(0, 0, 8, 18, 0, 0, Math.PI * 2);
@@ -296,82 +337,22 @@ export class GooseManager {
   private drawGooseSprite(ctx: CanvasRenderingContext2D, goose: GooseTarget) {
     const w = goose.width;
     const h = goose.height;
+    const type = goose.type.toLowerCase();
 
     // Sprite image key lookup
-    let spriteKey = 'goose_black_1';
-    if (goose.type === 'BLUE') spriteKey = goose.frameIndex === 0 ? 'goose_blue_1' : 'goose_blue_2';
-    else if (goose.type === 'RED') spriteKey = goose.frameIndex === 0 ? 'goose_red_1' : 'goose_red_2';
-    else spriteKey = goose.frameIndex === 0 ? 'goose_black_1' : 'goose_black_2';
+    let spriteKey = `goose_${type}_1`;
+    if (goose.state === 'FLYING') {
+      spriteKey = goose.frameIndex === 0 ? `goose_${type}_1` : `goose_${type}_2`;
+    } else if (goose.state === 'HIT') {
+      spriteKey = `goose_${type}_hit`;
+    } else if (goose.state === 'FALLING') {
+      spriteKey = goose.frameIndex === 0 ? `goose_${type}_fall_1` : `goose_${type}_fall_2`;
+    }
 
-    if (goose.state === 'HIT') spriteKey = 'goose_hit';
-
-    const sprite = this.sprites.get(spriteKey);
+    const sprite = this.sprites.get(spriteKey) || this.sprites.get('goose_black_1');
     if (sprite && sprite.complete && sprite.naturalWidth > 0) {
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
-    } else {
-      // Procedural Retro Pixel Art Fallback
-      this.drawProceduralGoose(ctx, goose, w, h);
     }
-  }
-
-  private drawProceduralGoose(ctx: CanvasRenderingContext2D, goose: GooseTarget, w: number, h: number) {
-    let bodyColor = '#18181b'; // Black
-    let wingColor = '#52525b';
-    let headColor = '#15803d'; // Green head
-
-    if (goose.type === 'BLUE') {
-      bodyColor = '#2563eb';
-      wingColor = '#9333ea';
-      headColor = '#0284c7';
-    } else if (goose.type === 'RED') {
-      bodyColor = '#dc2626';
-      wingColor = '#ea580c';
-      headColor = '#991b1b';
-    }
-
-    // Body
-    ctx.fillStyle = bodyColor;
-    ctx.beginPath();
-    ctx.ellipse(0, 4, w / 2.5, h / 3, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Head
-    ctx.fillStyle = headColor;
-    ctx.beginPath();
-    ctx.arc(w / 3, -6, 10, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Beak
-    ctx.fillStyle = '#f59e0b';
-    ctx.beginPath();
-    ctx.moveTo(w / 3 + 8, -8);
-    ctx.lineTo(w / 3 + 18, -5);
-    ctx.lineTo(w / 3 + 8, -2);
-    ctx.closePath();
-    ctx.fill();
-
-    // Wing (Flapping position based on frameIndex)
-    ctx.fillStyle = wingColor;
-    ctx.beginPath();
-    if (goose.frameIndex === 0) {
-      // Wing UP
-      ctx.ellipse(-4, -12, 12, 18, -0.3, 0, Math.PI * 2);
-    } else {
-      // Wing DOWN
-      ctx.ellipse(-4, 14, 12, 16, 0.3, 0, Math.PI * 2);
-    }
-    ctx.fill();
-
-    // Eye
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(w / 3 + 4, -8, 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#000000';
-    ctx.beginPath();
-    ctx.arc(w / 3 + 5, -8, 1.5, 0, Math.PI * 2);
-    ctx.fill();
   }
 }
-
