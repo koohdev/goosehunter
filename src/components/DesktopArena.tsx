@@ -90,9 +90,13 @@ export const DesktopArena: React.FC<DesktopArenaProps> = ({
       });
     });
 
-    audioManager.preloadSounds();
+    audioManager.preloadSounds().then(() => {
+      audioManager.startBgm();
+      audioManager.playSound('start');
+    });
 
     return () => {
+      audioManager.stopBgm();
       engine.destroy();
     };
   }, [isSoloMouse, sessionId]);
@@ -155,6 +159,7 @@ export const DesktopArena: React.FC<DesktopArenaProps> = ({
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    audioManager.resumeContext();
     if (!gameState.isSoloMouseMode || !engineRef.current) return;
     e.preventDefault();
     engineRef.current.fireShot();

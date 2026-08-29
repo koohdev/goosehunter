@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node server.mjs",
+    "dev": "next dev",
     "build": "next build",
-    "start": "node server.mjs",
+    "start": "next start",
+    "dev:custom": "node server.mjs",
+    "start:custom": "node server.mjs",
     "lint": "eslint"
   },
   "dependencies": {
@@ -14,6 +16,7 @@
     "canvas-confetti": "^1.9.4",
     "lucide-react": "^1.37.0",
     "next": "16.3.3",
+    "peerjs": "^1.5.5",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",

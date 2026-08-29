@@ -4,12 +4,14 @@ class AudioManager {
   private activeSources: Map<string, AudioBufferSourceNode> = new Map();
   private lastPlayedAt: Map<string, number> = new Map();
   private enabled: boolean = true;
+  private bgmAudio: HTMLAudioElement | null = null;
+  private bgmStarted: boolean = false;
 
   constructor() {
-    // Lazy initialization on first user interaction
+    // Lazy initialization
   }
 
-  private getContext(): AudioContext | null {
+  public getContext(): AudioContext | null {
     if (typeof window === 'undefined') return null;
     if (!this.audioCtx) {
       const AudioCtxClass =
@@ -20,20 +22,63 @@ class AudioManager {
       }
     }
     if (this.audioCtx && this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume();
+      this.audioCtx.resume().catch(() => {});
     }
     return this.audioCtx;
+  }
+
+  public resumeContext() {
+    const ctx = this.getContext();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    if (this.enabled && this.bgmStarted && this.bgmAudio && this.bgmAudio.paused) {
+      this.bgmAudio.play().catch(() => {});
+    }
   }
 
   public setEnabled(enabled: boolean) {
     this.enabled = enabled;
     if (!enabled) {
       this.stopAll();
+      if (this.bgmAudio) {
+        this.bgmAudio.pause();
+      }
+    } else {
+      this.resumeContext();
+      if (this.bgmStarted && this.bgmAudio) {
+        this.bgmAudio.play().catch(() => {});
+      }
     }
   }
 
   public isEnabled(): boolean {
     return this.enabled;
+  }
+
+  public startBgm() {
+    this.bgmStarted = true;
+    if (typeof window === 'undefined') return;
+
+    if (!this.bgmAudio) {
+      this.bgmAudio = new Audio('/sounds/Powerup.mp3');
+      this.bgmAudio.loop = true;
+      this.bgmAudio.volume = 0.35;
+    }
+
+    if (this.enabled) {
+      this.bgmAudio.play().catch(() => {
+        // Autoplay policy waiting for user interaction
+      });
+    }
+  }
+
+  public stopBgm() {
+    this.bgmStarted = false;
+    if (this.bgmAudio) {
+      this.bgmAudio.pause();
+      this.bgmAudio.currentTime = 0;
+    }
   }
 
   public stopAll() {
@@ -42,7 +87,7 @@ class AudioManager {
         source.stop();
         source.disconnect();
       } catch {
-        // Ignored if already stopped
+        // Ignored
       }
     });
     this.activeSources.clear();
@@ -57,6 +102,7 @@ class AudioManager {
       { name: 'click', url: '/sounds/Click.wav' },
       { name: 'powerup', url: '/sounds/Powerup.mp3' },
       { name: 'start', url: '/sounds/START.mp3' },
+      { name: 'bgm', url: '/sounds/NightShade.mp3' },
     ];
 
     const ctx = this.getContext();
@@ -76,16 +122,17 @@ class AudioManager {
     }
   }
 
-  public playSound(name: 'gunshot' | 'hit' | 'miss' | 'powerup' | 'win' | 'gameover' | 'click') {
+  public playSound(name: 'gunshot' | 'hit' | 'miss' | 'powerup' | 'win' | 'gameover' | 'click' | 'start') {
     if (!this.enabled) return;
+    this.resumeContext();
     const ctx = this.getContext();
     if (!ctx) return;
 
     const now = Date.now();
     const lastTime = this.lastPlayedAt.get(name) || 0;
 
-    // Prevent duplicate triggers for level-up/win/gameover sounds within 1.2s
-    if ((name === 'win' || name === 'powerup' || name === 'gameover') && now - lastTime < 1200) {
+    // Prevent duplicate rapid triggers for level-up/win/gameover sounds
+    if ((name === 'win' || name === 'powerup' || name === 'gameover' || name === 'start') && now - lastTime < 1000) {
       return;
     }
     this.lastPlayedAt.set(name, now);
@@ -113,7 +160,7 @@ class AudioManager {
         const source = ctx.createBufferSource();
         source.buffer = buffer;
         const gainNode = ctx.createGain();
-        gainNode.gain.value = name === 'gunshot' ? 0.6 : 0.45;
+        gainNode.gain.value = name === 'gunshot' ? 0.6 : name === 'start' ? 0.4 : 0.45;
         source.connect(gainNode);
         gainNode.connect(ctx.destination);
 
@@ -194,6 +241,20 @@ class AudioManager {
       gain.connect(ctx.destination);
       osc.start(now);
       osc.stop(now + 0.35);
+    } else if (name === 'start') {
+      const notes = [330, 440, 554, 659];
+      notes.forEach((freq, idx) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'triangle';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0.2, now + idx * 0.08);
+        g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.15);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start(now + idx * 0.08);
+        o.stop(now + idx * 0.08 + 0.18);
+      });
     } else if (name === 'click') {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(600, now);

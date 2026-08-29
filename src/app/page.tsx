@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { QrPairingLobby } from '@/components/QrPairingLobby';
 import { DesktopArena } from '@/components/DesktopArena';
 import { getSocket } from '@/lib/socket-client';
+import { audioManager } from '@/engine/AudioManager';
 
 export default function DesktopPage() {
   const [sessionId, setSessionId] = useState<string>('');
@@ -26,6 +27,8 @@ export default function DesktopPage() {
       setControllerConnected(true);
       setInGame(true);
       setIsSoloMouse(false);
+      audioManager.resumeContext();
+      audioManager.startBgm();
     };
 
     const handleControllerDisconnected = () => {
@@ -54,6 +57,8 @@ export default function DesktopPage() {
   }, []);
 
   const handleStartSoloMouse = () => {
+    audioManager.resumeContext();
+    audioManager.startBgm();
     setIsSoloMouse(true);
     setInGame(true);
   };
