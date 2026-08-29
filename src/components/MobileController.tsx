@@ -125,17 +125,12 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
     e.preventDefault();
     if (controllerState !== 'READY') return;
 
-    // Visual recoil state
     setIsFiring(true);
-    setTimeout(() => setIsFiring(false), 120);
+    setTimeout(() => setIsFiring(false), 100);
 
-    // Haptic recoil
-    motionSensor.triggerHaptic(50);
-
-    // Local trigger sound
+    motionSensor.triggerHaptic(40);
     audioManager.playSound('click');
 
-    // Emit fire trigger with current aim position
     const socket = getSocket();
     socket.emit('controller:trigger', {
       sessionId,
@@ -152,13 +147,13 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
   };
 
   return (
-    <div className="fixed inset-0 bg-zinc-950 text-white font-mono flex flex-col justify-between select-none touch-none overflow-hidden p-4">
+    <div className="fixed inset-0 bg-zinc-950 text-zinc-200 font-mono flex flex-col justify-between select-none touch-none overflow-hidden p-4">
       {/* Top Controller Bar */}
       <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
         <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-          <span className="text-xs font-bold text-zinc-300">ROOM: {sessionId}</span>
-          <span className="text-[10px] text-zinc-500 font-semibold uppercase">
+          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+          <span className="text-xs font-semibold text-zinc-300">ROOM: {sessionId}</span>
+          <span className="text-[10px] text-zinc-500 font-medium uppercase">
             {connected ? 'CONNECTED' : 'CONNECTING...'}
           </span>
         </div>
@@ -166,9 +161,10 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
         {controllerState === 'READY' && (
           <button
             onClick={handleCalibrate}
-            className="flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 active:scale-95 text-xs text-amber-400 font-bold px-3 py-1.5 rounded-full shadow"
+            className="flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 active:scale-95 text-xs text-amber-400 font-semibold px-3 py-1.5 rounded shadow"
           >
-            <RotateCcw className="w-3.5 h-3.5" /> RE-CENTER
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>RE-CENTER</span>
           </button>
         )}
       </div>
@@ -176,20 +172,20 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
       {/* Screen 1: Request Sensor Permissions */}
       {controllerState === 'PERMISSION' && (
         <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-6">
-          <div className="w-20 h-20 rounded-full bg-emerald-950/80 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-900/50">
-            <Zap className="w-10 h-10 animate-bounce" />
+          <div className="w-16 h-16 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-300 shadow">
+            <Zap className="w-8 h-8 text-amber-400" />
           </div>
 
           <div>
-            <h2 className="text-2xl font-black text-amber-400 mb-2">MOTION LIGHT GUN</h2>
-            <p className="text-zinc-400 text-xs max-w-xs mx-auto">
-              Enable gyroscope access so you can aim on the screen by tilting your phone.
+            <h2 className="text-xl font-bold text-zinc-100 mb-2">MOTION LIGHT GUN</h2>
+            <p className="text-zinc-400 text-xs max-w-xs mx-auto leading-relaxed">
+              Enable gyroscope access to control the aiming reticle by moving your phone.
             </p>
           </div>
 
           <button
             onClick={handleRequestPermission}
-            className="w-full max-w-xs py-4 bg-gradient-to-r from-emerald-600 to-teal-600 active:scale-95 text-black font-black text-sm tracking-wider rounded-xl shadow-xl border border-emerald-400/60 uppercase"
+            className="w-full max-w-xs py-3.5 bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-100 font-bold text-xs tracking-wider rounded-lg shadow border border-zinc-600 uppercase"
           >
             Enable Motion Sensors
           </button>
@@ -199,20 +195,20 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
       {/* Screen 2: Point & Calibrate */}
       {controllerState === 'CALIBRATION' && (
         <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-6">
-          <div className="w-24 h-24 rounded-full bg-amber-950/80 border-2 border-amber-400 flex items-center justify-center text-amber-300 animate-pulse shadow-lg shadow-amber-900/50">
-            <Crosshair className="w-12 h-12" />
+          <div className="w-20 h-20 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-amber-400 shadow">
+            <Crosshair className="w-10 h-10" />
           </div>
 
           <div>
-            <h2 className="text-2xl font-black text-emerald-400 mb-2">CALIBRATION</h2>
-            <p className="text-zinc-300 text-xs max-w-xs mx-auto leading-relaxed">
-              Hold phone comfortably, point directly at the <span className="text-yellow-300 font-bold">CENTER of the desktop screen</span>, then tap Calibrate below.
+            <h2 className="text-xl font-bold text-zinc-100 mb-2">CALIBRATION</h2>
+            <p className="text-zinc-400 text-xs max-w-xs mx-auto leading-relaxed">
+              Point phone directly at the center of the screen, then tap Calibrate below.
             </p>
           </div>
 
           <button
             onClick={handleCalibrate}
-            className="w-full max-w-xs py-4 bg-gradient-to-r from-amber-500 to-yellow-500 active:scale-95 text-black font-black text-sm tracking-wider rounded-xl shadow-xl border border-yellow-300 uppercase"
+            className="w-full max-w-xs py-3.5 bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-100 font-bold text-xs tracking-wider rounded-lg shadow border border-zinc-600 uppercase"
           >
             Calibrate Center Origin
           </button>
@@ -223,18 +219,18 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
       {controllerState === 'READY' && (
         <div className="flex-1 flex flex-col justify-between py-2 gap-4">
           {/* Controller HUD Pill */}
-          <div className="grid grid-cols-3 gap-2 bg-zinc-900/90 border border-zinc-800 rounded-xl p-2.5 text-center text-xs">
+          <div className="grid grid-cols-3 gap-2 bg-zinc-900/90 border border-zinc-800 rounded-lg p-2.5 text-center text-xs">
             <div>
-              <div className="text-[10px] text-zinc-500 uppercase font-semibold">Level</div>
-              <div className="text-base font-extrabold text-amber-400">{gameState.level}</div>
+              <div className="text-[10px] text-zinc-500 uppercase font-semibold">LEVEL</div>
+              <div className="text-sm font-bold text-zinc-200">{gameState.level}</div>
             </div>
             <div>
-              <div className="text-[10px] text-zinc-500 uppercase font-semibold">Bullets</div>
-              <div className="text-base font-extrabold text-sky-400">{gameState.bullets}</div>
+              <div className="text-[10px] text-zinc-500 uppercase font-semibold">BULLETS</div>
+              <div className="text-sm font-bold text-amber-400">{gameState.bullets}</div>
             </div>
             <div>
-              <div className="text-[10px] text-zinc-500 uppercase font-semibold">Score</div>
-              <div className="text-base font-extrabold text-emerald-400">{gameState.score}</div>
+              <div className="text-[10px] text-zinc-500 uppercase font-semibold">SCORE</div>
+              <div className="text-sm font-bold text-emerald-400">{gameState.score}</div>
             </div>
           </div>
 
@@ -242,18 +238,18 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
           <div
             onTouchStart={handleTriggerPress}
             onMouseDown={handleTriggerPress}
-            className={`flex-1 rounded-2xl border-4 transition-all duration-75 flex flex-col items-center justify-center cursor-pointer active:scale-[0.98] ${
+            className={`flex-1 rounded-xl border-2 transition-all duration-75 flex flex-col items-center justify-center cursor-pointer active:scale-[0.99] ${
               isFiring
-                ? 'bg-rose-600/90 border-rose-400 shadow-[0_0_50px_rgba(244,63,94,0.8)]'
-                : 'bg-gradient-to-b from-zinc-900 to-black border-zinc-700 shadow-inner'
+                ? 'bg-zinc-800 border-zinc-500 shadow-md'
+                : 'bg-zinc-900/80 border-zinc-800'
             }`}
           >
-            <div className={`p-6 rounded-full border-2 transition-all ${isFiring ? 'border-white bg-rose-500 scale-110' : 'border-rose-500/60 bg-rose-950/30'}`}>
-              <Crosshair className={`w-16 h-16 transition-colors ${isFiring ? 'text-white' : 'text-rose-400'}`} />
+            <div className={`p-5 rounded-full border transition-all ${isFiring ? 'border-zinc-300 bg-zinc-700' : 'border-zinc-700 bg-zinc-950'}`}>
+              <Crosshair className={`w-12 h-12 ${isFiring ? 'text-zinc-100' : 'text-zinc-400'}`} />
             </div>
 
-            <div className="mt-4 font-black tracking-widest text-lg text-rose-400 uppercase drop-shadow">
-              {isFiring ? 'BANG!!' : 'TAP ANYWHERE TO FIRE'}
+            <div className="mt-3 font-bold tracking-wider text-xs text-zinc-300 uppercase">
+              {isFiring ? 'FIRED' : 'TAP TO FIRE'}
             </div>
 
             <div className="text-[10px] text-zinc-500 mt-1">
@@ -261,14 +257,14 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
             </div>
           </div>
 
-          {/* Quick Round Navigation Modal sync for mobile */}
+          {/* Navigation buttons when round concludes */}
           {roundStatus === 'ROUND_WON' && (
             <div className="flex gap-2">
               <button
                 onClick={() => sendGameCommand('NEXT_LEVEL')}
-                className="flex-1 py-3 bg-emerald-600 active:scale-95 font-black text-xs text-black rounded-lg uppercase"
+                className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 active:scale-95 font-bold text-xs text-zinc-100 rounded-lg uppercase"
               >
-                Next Level
+                NEXT LEVEL
               </button>
             </div>
           )}
@@ -277,9 +273,9 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
             <div className="flex gap-2">
               <button
                 onClick={() => sendGameCommand('RESTART')}
-                className="flex-1 py-3 bg-rose-600 active:scale-95 font-black text-xs text-white rounded-lg uppercase"
+                className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 active:scale-95 font-bold text-xs text-zinc-100 rounded-lg uppercase"
               >
-                Restart Game
+                RESTART GAME
               </button>
             </div>
           )}
@@ -289,12 +285,12 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
       {/* Screen 4: Error State */}
       {controllerState === 'ERROR' && (
         <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-4">
-          <AlertTriangle className="w-12 h-12 text-rose-500" />
-          <h3 className="text-lg font-bold text-rose-400">Connection Error</h3>
+          <AlertTriangle className="w-10 h-10 text-amber-500" />
+          <h3 className="text-base font-bold text-zinc-200">Connection Error</h3>
           <p className="text-zinc-400 text-xs max-w-xs">{errorMessage || 'Unable to connect to game session.'}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-6 py-2.5 bg-zinc-800 border border-zinc-700 text-white rounded-lg text-xs font-bold"
+            className="px-5 py-2 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded text-xs font-semibold"
           >
             Retry Connection
           </button>
@@ -302,8 +298,8 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
       )}
 
       {/* Footer Info */}
-      <div className="text-center text-[10px] text-zinc-600 pt-2 border-t border-zinc-900 flex items-center justify-center gap-1">
-        <ShieldCheck className="w-3 h-3 text-emerald-500" /> Web Motion Light Gun • Goose Hunter
+      <div className="text-center text-[10px] text-zinc-500 pt-2 border-t border-zinc-900 flex items-center justify-center gap-1">
+        <ShieldCheck className="w-3 h-3 text-zinc-400" /> Web Motion Light Gun • Goose Hunter
       </div>
     </div>
   );

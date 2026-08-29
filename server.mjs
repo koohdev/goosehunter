@@ -106,7 +106,7 @@ app.prepare().then(() => {
     socket.on('controller:calibrated', (data) => {
       const sessionId = socket.data.sessionId || data.sessionId;
       if (sessionId) {
-        io.to(`room:${sessionId}`).emit('controller:calibrated', data);
+        socket.to(`room:${sessionId}`).emit('controller:calibrated', data);
       }
     });
 
@@ -114,7 +114,7 @@ app.prepare().then(() => {
     socket.on('game:command', (data) => {
       const sessionId = socket.data.sessionId || data.sessionId;
       if (sessionId) {
-        io.to(`room:${sessionId}`).emit('game:sync', data);
+        socket.to(`room:${sessionId}`).emit('game:sync', data);
       }
     });
 
