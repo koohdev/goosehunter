@@ -76,6 +76,7 @@ export class GameEngine {
   private bgCache: Map<string, HTMLImageElement> = new Map();
   private crosshairImage: HTMLImageElement | null = null;
   private shotgunImage: HTMLImageElement | null = null;
+  private shotgunFireImage: HTMLImageElement | null = null;
   private flashImage: HTMLImageElement | null = null;
   private shellImage: HTMLImageElement | null = null;
 
@@ -126,9 +127,12 @@ export class GameEngine {
     this.crosshairImage = new Image();
     this.crosshairImage.src = '/images/crosshair062.png';
 
-    // Shotgun weapon sprite
+    // Shotgun weapon sprites (Idle & Firing frames)
     this.shotgunImage = new Image();
-    this.shotgunImage.src = '/images/shotgun-fps.png';
+    this.shotgunImage.src = '/images/shotgun-fps-idle.png';
+
+    this.shotgunFireImage = new Image();
+    this.shotgunFireImage.src = '/images/shotgun-fps-fire.png';
 
     // Muzzle blast flash sprite
     this.flashImage = new Image();
@@ -550,7 +554,7 @@ export class GameEngine {
   private drawShotgun(ctx: CanvasRenderingContext2D, w: number, h: number) {
     // Shotgun base pivot position with horizontal sway tracking the aim
     const gunBaseX = w / 2 + (this.aimX - w / 2) * 0.28;
-    const gunBaseY = h + 38 + this.recoilY;
+    const gunBaseY = h + 30 + this.recoilY;
 
     // Angle towards aim position
     const dx = this.aimX - gunBaseX;
@@ -558,26 +562,30 @@ export class GameEngine {
     const rawAngle = Math.atan2(dx, -dy);
     const gunAngle = Math.max(-0.60, Math.min(0.60, rawAngle)) + this.recoilRot;
 
-    // Render Gun Sprite
-    const dw = 265;
-    const dh = 265;
+    // Render Single-Barrel Gun Sprite (600x700 natural aspect ratio)
+    const dw = 270;
+    const dh = 315;
 
     ctx.save();
     ctx.translate(gunBaseX, gunBaseY);
     ctx.rotate(gunAngle);
 
-    if (this.shotgunImage && this.shotgunImage.complete && this.shotgunImage.naturalWidth > 0) {
+    const activeGunImg = (this.muzzleFlashTimer > 0 && this.shotgunFireImage && this.shotgunFireImage.complete)
+      ? this.shotgunFireImage
+      : this.shotgunImage;
+
+    if (activeGunImg && activeGunImg.complete && activeGunImg.naturalWidth > 0) {
       ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(this.shotgunImage, -dw / 2, -dh, dw, dh);
+      ctx.drawImage(activeGunImg, -dw / 2, -dh, dw, dh);
     } else {
       // Procedural Shotgun Fallback
       this.drawProceduralShotgun(ctx, dw, dh);
     }
     ctx.restore();
 
-    // Render Muzzle Flash at barrel tip
+    // Render Muzzle Flash at barrel tip (Tip is at X=300, Y=40 in 600x700 sprite => tipDist = dh * (660/700))
     if (this.muzzleFlashTimer > 0) {
-      const tipDist = 248 - this.recoilY * 0.4;
+      const tipDist = (dh * (660 / 700)) - this.recoilY * 0.4;
       const tipX = gunBaseX + Math.sin(gunAngle) * tipDist;
       const tipY = gunBaseY - Math.cos(gunAngle) * tipDist;
 
@@ -586,18 +594,18 @@ export class GameEngine {
       ctx.rotate(gunAngle);
 
       // Radial bright core glow
-      const flashGrad = ctx.createRadialGradient(0, 0, 8, 0, 0, 80);
+      const flashGrad = ctx.createRadialGradient(0, 0, 8, 0, 0, 85);
       flashGrad.addColorStop(0, 'rgba(255, 255, 200, 0.95)');
-      flashGrad.addColorStop(0.3, 'rgba(255, 170, 40, 0.7)');
+      flashGrad.addColorStop(0.35, 'rgba(255, 170, 40, 0.7)');
       flashGrad.addColorStop(1, 'rgba(255, 80, 0, 0)');
       ctx.fillStyle = flashGrad;
       ctx.beginPath();
-      ctx.arc(0, 0, 80, 0, Math.PI * 2);
+      ctx.arc(0, 0, 85, 0, Math.PI * 2);
       ctx.fill();
 
       // Muzzle Flash Sprite Burst
       if (this.flashImage && this.flashImage.complete && this.flashImage.naturalWidth > 0) {
-        const fw = 135;
+        const fw = 140;
         const fh = 240;
         ctx.imageSmoothingEnabled = true;
         ctx.drawImage(this.flashImage, -fw / 2, -fh, fw, fh);
