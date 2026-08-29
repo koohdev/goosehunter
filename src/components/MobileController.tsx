@@ -29,11 +29,6 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
     if (!sessionId) return;
     const socket = getSocket();
 
-    const handleConnect = () => {
-      setConnected(true);
-      socket.emit('room:join', { sessionId });
-    };
-
     const handleJoined = () => {
       setConnected(true);
     };
@@ -52,18 +47,13 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
       }));
     };
 
-    if (socket.connected) {
-      handleConnect();
-    } else {
-      socket.on('connect', handleConnect);
-    }
-
     socket.on('room:joined', handleJoined);
     socket.on('room:error', handleRoomError);
     socket.on('game:sync', handleGameSync);
 
+    socket.emit('room:join', { sessionId });
+
     return () => {
-      socket.off('connect', handleConnect);
       socket.off('room:joined', handleJoined);
       socket.off('room:error', handleRoomError);
       socket.off('game:sync', handleGameSync);

@@ -45,6 +45,7 @@ export class WebRTCNetworkClient {
   private role: NetworkRole = 'idle';
   private currentSessionId: string = '';
   public connected: boolean = false;
+  private joinTimeoutId: NodeJS.Timeout | null = null;
 
   constructor() {
     // Initialized on demand
@@ -80,13 +81,18 @@ export class WebRTCNetworkClient {
   /**
    * Host initializes a game room session
    */
-  public createRoom(preferredSessionId?: string): void {
+  public createRoom(preferredSessionId?: string): string {
     this.destroy();
     this.role = 'host';
 
     const sessionId = preferredSessionId || generateCleanSessionId();
     this.currentSessionId = sessionId;
     const peerId = formatRoomPeerId(sessionId);
+
+    // Immediately dispatch room:created on the next microtask so the UI displays the QR code instantly
+    queueMicrotask(() => {
+      this.dispatch('room:created', { sessionId });
+    });
 
     try {
       this.peer = new Peer(peerId, {
@@ -134,7 +140,7 @@ export class WebRTCNetworkClient {
       this.peer.on('error', (err: PeerErrorWithCode) => {
         console.warn(`[WebRTC Host] Peer error:`, err);
         if (err.type === 'unavailable-id') {
-          // Retry with new ID
+          // If ID collision, retry with new random ID
           setTimeout(() => this.createRoom(), 250);
         } else {
           this.dispatch('room:error', { message: err.message || 'Host connection error' });
@@ -143,6 +149,8 @@ export class WebRTCNetworkClient {
     } catch (err) {
       console.error('[WebRTC Host] Failed to initialize peer:', err);
     }
+
+    return sessionId;
   }
 
   /**
@@ -155,6 +163,15 @@ export class WebRTCNetworkClient {
 
     const targetPeerId = formatRoomPeerId(this.currentSessionId);
 
+    // Timeout fallback if connection stalls
+    this.joinTimeoutId = setTimeout(() => {
+      if (!this.connected) {
+        this.dispatch('room:error', {
+          message: `Connection timed out. Check that the room code "${this.currentSessionId}" is still active on your screen.`,
+        });
+      }
+    }, 10000);
+
     try {
       this.peer = new Peer({
         config: { iceServers: STUN_ICE_SERVERS },
@@ -163,8 +180,6 @@ export class WebRTCNetworkClient {
 
       this.peer.on('open', (id) => {
         console.log(`[WebRTC Controller] Peer opened (${id}), connecting to host: ${targetPeerId}`);
-        this.connected = true;
-        this.dispatch('connect');
 
         // Connect to host with low-latency unordered channel for high-frequency motion
         const conn = this.peer!.connect(targetPeerId, {
@@ -174,7 +189,13 @@ export class WebRTCNetworkClient {
         this.connection = conn;
 
         conn.on('open', () => {
+          if (this.joinTimeoutId) {
+            clearTimeout(this.joinTimeoutId);
+            this.joinTimeoutId = null;
+          }
+          this.connected = true;
           console.log(`[WebRTC Controller] Connected to host ${targetPeerId}!`);
+          this.dispatch('connect');
           this.dispatch('room:joined', { sessionId: this.currentSessionId });
         });
 
@@ -199,6 +220,10 @@ export class WebRTCNetworkClient {
 
       this.peer.on('error', (err: PeerErrorWithCode) => {
         console.warn(`[WebRTC Controller] Peer error:`, err);
+        if (this.joinTimeoutId) {
+          clearTimeout(this.joinTimeoutId);
+          this.joinTimeoutId = null;
+        }
         if (err.type === 'peer-unavailable') {
           this.dispatch('room:error', {
             message: `Room "${this.currentSessionId}" not found. Please check the code on your screen.`,
@@ -257,6 +282,11 @@ export class WebRTCNetworkClient {
   }
 
   public destroy(): void {
+    if (this.joinTimeoutId) {
+      clearTimeout(this.joinTimeoutId);
+      this.joinTimeoutId = null;
+    }
+
     if (this.connection) {
       try {
         this.connection.close();

@@ -35,18 +35,12 @@ export default function DesktopPage() {
       setControllerConnected(false);
     };
 
-    if (socket.connected) {
-      socket.emit('room:create');
-    } else {
-      socket.on('connect', () => {
-        socket.emit('room:create');
-      });
-    }
-
     socket.on('room:created', handleRoomCreated);
     socket.on('controller:connected', handleControllerConnected);
     socket.on('controller:calibrated', handleControllerCalibrated);
     socket.on('controller:disconnected', handleControllerDisconnected);
+
+    socket.emit('room:create');
 
     return () => {
       socket.off('room:created', handleRoomCreated);

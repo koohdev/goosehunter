@@ -66,10 +66,22 @@ class AudioManager {
       this.bgmAudio.volume = 0.35;
     }
 
-    if (this.enabled) {
+    if (this.enabled && this.bgmAudio.paused) {
       this.bgmAudio.play().catch(() => {
         // Autoplay policy waiting for user interaction
       });
+    }
+  }
+
+  public pauseBgm() {
+    if (this.bgmAudio && !this.bgmAudio.paused) {
+      this.bgmAudio.pause();
+    }
+  }
+
+  public resumeBgm() {
+    if (this.enabled && this.bgmStarted && this.bgmAudio && this.bgmAudio.paused) {
+      this.bgmAudio.play().catch(() => {});
     }
   }
 
@@ -100,9 +112,7 @@ class AudioManager {
       { name: 'beng', url: '/sounds/Beng.MP3' },
       { name: 'bullet', url: '/sounds/bullet_shot.wav' },
       { name: 'click', url: '/sounds/Click.wav' },
-      { name: 'powerup', url: '/sounds/Powerup.mp3' },
       { name: 'start', url: '/sounds/START.mp3' },
-      { name: 'bgm', url: '/sounds/NightShade.mp3' },
     ];
 
     const ctx = this.getContext();
@@ -131,18 +141,24 @@ class AudioManager {
     const now = Date.now();
     const lastTime = this.lastPlayedAt.get(name) || 0;
 
-    // Prevent duplicate rapid triggers for level-up/win/gameover sounds
-    if ((name === 'win' || name === 'powerup' || name === 'gameover' || name === 'start') && now - lastTime < 1000) {
+    // Prevent duplicate rapid triggers
+    if ((name === 'win' || name === 'gameover' || name === 'start') && now - lastTime < 1500) {
       return;
     }
     this.lastPlayedAt.set(name, now);
 
+    // Pause BGM momentarily on victory / game over so dialogue sound is clean without doubling
+    if (name === 'win' || name === 'gameover') {
+      this.pauseBgm();
+      this.synthesizeSound(name, ctx);
+      return;
+    }
+
     let bufferKey: string = name;
     if (name === 'hit') bufferKey = 'beng';
-    if (name === 'win') bufferKey = 'powerup';
     if (name === 'miss') bufferKey = 'bullet';
 
-    // Stop any existing instance of this specific sound so it never doubles
+    // Stop any existing instance of this specific sound
     const existingSource = this.activeSources.get(bufferKey);
     if (existingSource) {
       try {
@@ -217,19 +233,20 @@ class AudioManager {
       gain.connect(ctx.destination);
       osc.start(now);
       osc.stop(now + 0.08);
-    } else if (name === 'powerup' || name === 'win') {
-      const notes = [440, 554, 659, 880];
+    } else if (name === 'win' || name === 'powerup') {
+      // Crisp 4-note victory chime
+      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
       notes.forEach((freq, idx) => {
         const o = ctx.createOscillator();
         const g = ctx.createGain();
-        o.type = 'square';
+        o.type = 'triangle';
         o.frequency.value = freq;
-        g.gain.setValueAtTime(0.15, now + idx * 0.07);
-        g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.07 + 0.18);
+        g.gain.setValueAtTime(0.2, now + idx * 0.1);
+        g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.25);
         o.connect(g);
         g.connect(ctx.destination);
-        o.start(now + idx * 0.07);
-        o.stop(now + idx * 0.07 + 0.2);
+        o.start(now + idx * 0.1);
+        o.stop(now + idx * 0.1 + 0.3);
       });
     } else if (name === 'gameover') {
       osc.type = 'sawtooth';

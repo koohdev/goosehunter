@@ -45,6 +45,7 @@ export class GameEngine {
 
   // Background image
   private bgImage: HTMLImageElement | null = null;
+  private bgCache: Map<string, HTMLImageElement> = new Map();
   private crosshairImage: HTMLImageElement | null = null;
 
   // Callback
@@ -53,6 +54,23 @@ export class GameEngine {
   constructor(levelManager: LevelManager) {
     this.levelManager = levelManager;
     this.gooseManager = new GooseManager();
+    this.preloadBackgrounds();
+  }
+
+  private preloadBackgrounds() {
+    if (typeof window === 'undefined') return;
+    const bgList = [
+      '/images/background.png',
+      '/images/background-4.png',
+      '/images/background-selection-4.png',
+      '/images/background-6-selection4.png',
+      '/images/background-selection.png',
+    ];
+    for (const src of bgList) {
+      const img = new Image();
+      img.src = src;
+      this.bgCache.set(src, img);
+    }
   }
 
   public init(canvas: HTMLCanvasElement, onStateChange: (state: GameRoundState) => void) {
@@ -79,8 +97,15 @@ export class GameEngine {
 
   public updateBackground() {
     const config = this.levelManager.getCurrentConfig();
-    this.bgImage = new Image();
-    this.bgImage.src = config.themeBackground;
+    const cached = this.bgCache.get(config.themeBackground);
+    if (cached) {
+      this.bgImage = cached;
+    } else {
+      const img = new Image();
+      img.src = config.themeBackground;
+      this.bgCache.set(config.themeBackground, img);
+      this.bgImage = img;
+    }
   }
 
   public start() {
@@ -104,6 +129,8 @@ export class GameEngine {
     this.floatingTexts = [];
     this.sparks = [];
     this.updateBackground();
+    audioManager.resumeBgm();
+    audioManager.playSound('start');
     this.notifyState();
   }
 

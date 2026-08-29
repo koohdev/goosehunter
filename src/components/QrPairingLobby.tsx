@@ -159,7 +159,7 @@ export const QrPairingLobby: React.FC<QrPairingLobbyProps> = ({
             </span>
           ) : (
             <span className="flex items-center gap-1.5 text-zinc-400">
-              <Smartphone className="w-4 h-4 text-amber-400 animate-bounce" /> Waiting for smartphone connection...
+              <Smartphone className="w-4 h-4 text-amber-400" /> Waiting for smartphone connection...
             </span>
           )}
         </div>
