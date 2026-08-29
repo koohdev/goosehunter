@@ -1,15 +1,33 @@
 'use client';
 
-import { getNetworkClient, WebRTCNetworkClient, resetNetworkClient } from './webrtc-client';
+import { io, Socket } from 'socket.io-client';
 
-export type { NetworkRole } from './webrtc-client';
-export { getNetworkClient, resetNetworkClient };
+let socket: Socket | null = null;
 
-// Interface compatible with previous getSocket() usages
-export function getSocket(): WebRTCNetworkClient {
-  return getNetworkClient();
+export function getSocket(): Socket {
+  if (typeof window === 'undefined') {
+    // Return dummy on server side during SSR
+    return {} as Socket;
+  }
+
+  if (!socket) {
+    socket = io({
+      transports: ['websocket', 'polling'],
+      autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
+    });
+  }
+
+  return socket;
 }
 
 export function disconnectSocket(): void {
-  resetNetworkClient();
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
 }

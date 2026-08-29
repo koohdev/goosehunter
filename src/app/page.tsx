@@ -8,6 +8,7 @@ import { audioManager } from '@/engine/AudioManager';
 
 export default function DesktopPage() {
   const [sessionId, setSessionId] = useState<string>('');
+  const [serverHostUrl, setServerHostUrl] = useState<string>('');
   const [controllerConnected, setControllerConnected] = useState<boolean>(false);
   const [inGame, setInGame] = useState<boolean>(false);
   const [isSoloMouse, setIsSoloMouse] = useState<boolean>(false);
@@ -15,8 +16,9 @@ export default function DesktopPage() {
   useEffect(() => {
     const socket = getSocket();
 
-    const handleRoomCreated = (data: { sessionId: string }) => {
+    const handleRoomCreated = (data: { sessionId: string; hostUrl?: string }) => {
       setSessionId(data.sessionId);
+      if (data.hostUrl) setServerHostUrl(data.hostUrl);
     };
 
     const handleControllerConnected = () => {
@@ -35,14 +37,22 @@ export default function DesktopPage() {
       setControllerConnected(false);
     };
 
+    const handleConnect = () => {
+      socket.emit('room:create');
+    };
+
+    socket.on('connect', handleConnect);
     socket.on('room:created', handleRoomCreated);
     socket.on('controller:connected', handleControllerConnected);
     socket.on('controller:calibrated', handleControllerCalibrated);
     socket.on('controller:disconnected', handleControllerDisconnected);
 
-    socket.emit('room:create');
+    if (socket.connected) {
+      socket.emit('room:create');
+    }
 
     return () => {
+      socket.off('connect', handleConnect);
       socket.off('room:created', handleRoomCreated);
       socket.off('controller:connected', handleControllerConnected);
       socket.off('controller:calibrated', handleControllerCalibrated);
@@ -83,6 +93,7 @@ export default function DesktopPage() {
           sessionId={sessionId}
           onStartSoloMouse={handleStartSoloMouse}
           controllerConnected={controllerConnected}
+          serverHostUrl={serverHostUrl}
         />
       ) : (
         <DesktopArena

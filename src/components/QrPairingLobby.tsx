@@ -2,55 +2,76 @@
 
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { Smartphone, MousePointer, QrCode, ShieldCheck, Copy, Check, Radio } from 'lucide-react';
+import { Smartphone, MousePointer, QrCode, ShieldCheck, Copy, Check, Radio, Wifi } from 'lucide-react';
 
 interface QrPairingLobbyProps {
   sessionId: string;
   onStartSoloMouse: () => void;
   controllerConnected: boolean;
+  serverHostUrl?: string;
 }
-
-const emptySubscribe = () => () => {};
 
 export const QrPairingLobby: React.FC<QrPairingLobbyProps> = ({
   sessionId,
   onStartSoloMouse,
   controllerConnected,
+  serverHostUrl = '',
 }) => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
+  const [resolvedOrigin, setResolvedOrigin] = useState<string>('');
+  const [detectedIps, setDetectedIps] = useState<{ name: string; address: string }[]>([]);
 
-  const isClient = React.useSyncExternalStore(
-    emptySubscribe,
-    () => true,
-    () => false
-  );
+  // Fetch local network IP for accurate cross-device pairing
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let base = serverHostUrl || window.location.origin;
+
+    // If accessed via localhost, query the server's LAN IP address
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      fetch('/api/network-info')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.hostUrl && data.primaryIp !== 'localhost') {
+            setResolvedOrigin(data.hostUrl);
+            if (data.ips) setDetectedIps(data.ips);
+          } else {
+            setResolvedOrigin(window.location.origin);
+          }
+        })
+        .catch(() => {
+          setResolvedOrigin(window.location.origin);
+        });
+    } else {
+      setResolvedOrigin(base);
+    }
+  }, [serverHostUrl]);
 
   const joinUrl =
-    isClient && sessionId
+    resolvedOrigin && sessionId
+      ? `${resolvedOrigin}/controller?session=${sessionId}`
+      : typeof window !== 'undefined' && sessionId
       ? `${window.location.origin}/controller?session=${sessionId}`
       : '';
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && sessionId) {
-      const origin = window.location.origin;
-      const url = `${origin}/controller?session=${sessionId}`;
+    if (!joinUrl || !sessionId) return;
 
-      QRCode.toDataURL(url, {
-        width: 280,
-        margin: 2,
-        errorCorrectionLevel: 'M',
-        color: {
-          dark: '#09090b',
-          light: '#ffffff',
-        },
+    QRCode.toDataURL(joinUrl, {
+      width: 280,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: {
+        dark: '#09090b',
+        light: '#ffffff',
+      },
+    })
+      .then((dataUrl) => {
+        setQrDataUrl(dataUrl);
       })
-        .then((dataUrl) => {
-          setQrDataUrl(dataUrl);
-        })
-        .catch((err) => console.error('QR generation error:', err));
-    }
-  }, [sessionId]);
+      .catch((err) => console.error('QR generation error:', err));
+  }, [joinUrl, sessionId]);
 
   const handleCopyLink = () => {
     if (!joinUrl) return;
@@ -66,7 +87,7 @@ export const QrPairingLobby: React.FC<QrPairingLobbyProps> = ({
       <div className="flex items-center justify-center gap-2 mb-2">
         <span className="inline-flex items-center gap-1.5 bg-zinc-800 text-zinc-300 border border-zinc-700 font-semibold text-xs px-3 py-1 rounded-full uppercase tracking-wider">
           <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-          WebRTC Light Gun Link
+          Cross-Device Motion Arcade
         </span>
       </div>
 
@@ -133,7 +154,7 @@ export const QrPairingLobby: React.FC<QrPairingLobbyProps> = ({
             <div>
               <div className="font-semibold text-zinc-100">Point & Calibrate</div>
               <div className="text-zinc-400 text-[11px]">
-                Aim phone at the screen center and tap Calibrate.
+                Aim phone at screen center and tap Calibrate.
               </div>
             </div>
           </div>
@@ -173,26 +194,47 @@ export const QrPairingLobby: React.FC<QrPairingLobbyProps> = ({
         </button>
       </div>
 
+      {/* Network link display & IP switcher */}
       {joinUrl && (
-        <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-zinc-400 bg-zinc-900/60 p-2 rounded border border-zinc-800/80">
-          <span className="truncate max-w-xs sm:max-w-md">{joinUrl}</span>
-          <button
-            onClick={handleCopyLink}
-            className="flex items-center gap-1 text-zinc-300 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 px-2 py-1 rounded text-[10px] uppercase font-bold shrink-0 transition"
-            title="Copy controller URL"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3 h-3 text-emerald-400" />
-                <span className="text-emerald-400">Copied</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3 h-3" />
-                <span>Copy Link</span>
-              </>
-            )}
-          </button>
+        <div className="mt-4 flex flex-col gap-1.5 text-[11px] text-zinc-400 bg-zinc-900/60 p-2.5 rounded border border-zinc-800/80">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 truncate">
+              <Wifi className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="truncate max-w-xs sm:max-w-md">{joinUrl}</span>
+            </div>
+            <button
+              onClick={handleCopyLink}
+              className="flex items-center gap-1 text-zinc-300 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 px-2 py-1 rounded text-[10px] uppercase font-bold shrink-0 transition"
+              title="Copy controller URL"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span className="text-emerald-400">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" />
+                  <span>Copy Link</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {detectedIps.length > 1 && (
+            <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 justify-center flex-wrap pt-1 border-t border-zinc-800/60">
+              <span>Switch IP:</span>
+              {detectedIps.map((ip) => (
+                <button
+                  key={ip.address}
+                  onClick={() => setResolvedOrigin(`http://${ip.address}:3000`)}
+                  className="px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300 text-[10px]"
+                >
+                  {ip.name}: {ip.address}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

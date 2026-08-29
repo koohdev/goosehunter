@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { parse } from 'node:url';
+import os from 'node:os';
 import next from 'next';
 import { Server } from 'socket.io';
 
@@ -11,6 +12,19 @@ const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 const sessions = new Map();
+
+function getLocalIpAddresses() {
+  const interfaces = os.networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ips.push({ name, address: iface.address });
+      }
+    }
+  }
+  return ips;
+}
 
 function generateSessionId() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -25,6 +39,24 @@ app.prepare().then(() => {
   const httpServer = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url, true);
+
+      // Lightweight API endpoint for network discovery
+      if (parsedUrl.pathname === '/api/network-info') {
+        const ips = getLocalIpAddresses();
+        const primaryIp = ips.length > 0 ? ips[0].address : 'localhost';
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.end(
+          JSON.stringify({
+            ips,
+            primaryIp,
+            port,
+            hostUrl: `http://${primaryIp}:${port}`,
+          })
+        );
+        return;
+      }
+
       await handle(req, res, parsedUrl);
     } catch (err) {
       console.error('Error occurred handling request:', req.url, err);
@@ -62,7 +94,15 @@ app.prepare().then(() => {
       socket.data.sessionId = sessionId;
       socket.data.role = 'host';
 
-      socket.emit('room:created', { sessionId });
+      const ips = getLocalIpAddresses();
+      const primaryIp = ips.length > 0 ? ips[0].address : 'localhost';
+
+      socket.emit('room:created', {
+        sessionId,
+        serverIp: primaryIp,
+        port,
+        hostUrl: `http://${primaryIp}:${port}`,
+      });
       console.log(`[Host] Created room ${sessionId} (Socket: ${socket.id})`);
     });
 
@@ -72,7 +112,7 @@ app.prepare().then(() => {
       const session = sessions.get(cleanId);
 
       if (!session) {
-        socket.emit('room:error', { message: 'Session not found or expired.' });
+        socket.emit('room:error', { message: `Room "${cleanId}" not found or expired.` });
         return;
       }
 
@@ -82,7 +122,7 @@ app.prepare().then(() => {
       socket.data.role = 'controller';
 
       socket.emit('room:joined', { sessionId: cleanId });
-      io.to(`room:${cleanId}`).emit('controller:connected', { controllerId: socket.id });
+      socket.to(`room:${cleanId}`).emit('controller:connected', { controllerId: socket.id });
       console.log(`[Controller] Joined room ${cleanId} (Socket: ${socket.id})`);
     });
 
@@ -136,7 +176,14 @@ app.prepare().then(() => {
     });
   });
 
-  httpServer.listen(port, () => {
-    console.log(`> Ready on http://localhost:${port}`);
+  httpServer.listen(port, '0.0.0.0', () => {
+    const ips = getLocalIpAddresses();
+    console.log(`\n========================================`);
+    console.log(`  Goose Hunter Server Running!`);
+    console.log(`  > Local:    http://localhost:${port}`);
+    if (ips.length > 0) {
+      console.log(`  > Network:  http://${ips[0].address}:${port}`);
+    }
+    console.log(`========================================\n`);
   });
 });
