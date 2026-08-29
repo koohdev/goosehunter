@@ -1,6 +1,6 @@
 'use client';
 
-import type { Peer as PeerType, DataConnection } from 'peerjs';
+import type { Room, DataPayload } from 'trystero';
 
 export type RealtimeEventHandler = (data: Record<string, unknown>) => void;
 
@@ -22,20 +22,18 @@ export interface RealtimeChannel {
   readonly sessionId: string;
 }
 
-interface PeerErrorWithCode extends Error {
-  type?: string;
-}
-
 // ----------------------------------------------------
 // 1. Host Channel (Desktop Arena / Lobby)
 // ----------------------------------------------------
 export class HostRealtimeChannel implements RealtimeChannel {
-  private peer: PeerType | null = null;
-  private connection: DataConnection | null = null;
+  private room: Room | null = null;
   private listeners: Map<string, Set<RealtimeEventHandler>> = new Map();
   public sessionId: string = '';
   public isConnected: boolean = false;
   private isDestroyed: boolean = false;
+
+  // Action senders
+  private sendGameSync: ((data: DataPayload) => Promise<void>) | null = null;
 
   constructor() {
     this.init();
@@ -45,95 +43,67 @@ export class HostRealtimeChannel implements RealtimeChannel {
     if (typeof window === 'undefined') return;
 
     try {
-      const { default: Peer } = await import('peerjs');
+      const { joinRoom } = await import('trystero');
       if (this.isDestroyed) return;
 
       const code = (preferredId || generateSessionCode()).toUpperCase();
       this.sessionId = code;
-      const peerId = `goose-hunter-room-${code}`;
+      const roomId = `goose-hunter-room-${code}`;
 
-      const peer = new Peer(peerId, {
-        debug: 0,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:global.stun.twilio.com:3478' },
-          ],
+      const room = joinRoom(
+        {
+          appId: 'goose-hunter-motion-arcade-v1',
         },
-      });
+        roomId
+      );
 
-      this.peer = peer;
+      this.room = room;
+      this.isConnected = true;
 
-      peer.on('open', () => {
-        this.isConnected = true;
-        this.dispatch('connect', {});
-        this.dispatch('room:created', {
-          sessionId: this.sessionId,
-          hostUrl: typeof window !== 'undefined' ? window.location.origin : '',
-        });
-      });
+      // Register actions
+      const aimAction = room.makeAction('aim');
+      const triggerAction = room.makeAction('trigger');
+      const calibratedAction = room.makeAction('calibrated');
+      const gameSyncAction = room.makeAction('gameSync');
+      const gameCommandAction = room.makeAction('gameCommand');
 
-      peer.on('connection', (conn) => {
-        // If an existing connection exists, close it or replace
-        if (this.connection) {
-          try {
-            this.connection.close();
-          } catch {
-            // ignore
-          }
-        }
+      this.sendGameSync = (data) => gameSyncAction.send(data);
 
-        this.connection = conn;
+      aimAction.onMessage = (data) => {
+        this.dispatch('aim:update', data as Record<string, unknown>);
+      };
 
-        conn.on('open', () => {
-          conn.send({ type: 'room:joined', sessionId: this.sessionId });
-          this.dispatch('controller:connected', { controllerId: conn.peer });
-        });
+      triggerAction.onMessage = (data) => {
+        this.dispatch('trigger:fired', data as Record<string, unknown>);
+      };
 
-        conn.on('data', (raw: unknown) => {
-          if (!raw || typeof raw !== 'object') return;
-          const message = raw as Record<string, unknown>;
-          const { type, ...payload } = message;
+      calibratedAction.onMessage = (data) => {
+        this.dispatch('controller:calibrated', data as Record<string, unknown>);
+      };
 
-          if (typeof type === 'string') {
-            // Map controller messages to host events
-            if (type === 'motion:aim') {
-              this.dispatch('aim:update', payload);
-            } else if (type === 'controller:trigger') {
-              this.dispatch('trigger:fired', payload);
-            } else if (type === 'controller:calibrated') {
-              this.dispatch('controller:calibrated', payload);
-            } else if (type === 'game:command') {
-              this.dispatch('game:sync', payload);
-            } else {
-              this.dispatch(type, payload);
-            }
-          }
-        });
+      gameSyncAction.onMessage = (data) => {
+        this.dispatch('game:sync', data as Record<string, unknown>);
+      };
 
-        conn.on('close', () => {
-          this.connection = null;
-          this.dispatch('controller:disconnected', {});
-        });
+      gameCommandAction.onMessage = (data) => {
+        this.dispatch('game:sync', data as Record<string, unknown>);
+      };
 
-        conn.on('error', (err) => {
-          console.warn('[Host WebRTC] Connection error:', err);
-        });
-      });
+      room.onPeerJoin = (peerId: string) => {
+        this.dispatch('controller:connected', { controllerId: peerId });
+      };
 
-      peer.on('error', (err: unknown) => {
-        const pErr = err as PeerErrorWithCode;
-        // If ID is taken, retry with new code
-        if (pErr?.type === 'unavailable-id') {
-          console.log('[Host WebRTC] Room ID occupied, generating new session ID...');
-          peer.destroy();
-          this.init();
-        } else {
-          console.warn('[Host WebRTC] Peer error:', err);
-        }
+      room.onPeerLeave = (peerId: string) => {
+        this.dispatch('controller:disconnected', { controllerId: peerId });
+      };
+
+      this.dispatch('connect', {});
+      this.dispatch('room:created', {
+        sessionId: this.sessionId,
+        hostUrl: typeof window !== 'undefined' ? window.location.origin : '',
       });
     } catch (err) {
-      console.error('[Host WebRTC] Initialization failed:', err);
+      console.error('[Host Realtime] Initialization error:', err);
     }
   }
 
@@ -153,7 +123,7 @@ export class HostRealtimeChannel implements RealtimeChannel {
 
   public emit(event: string, data: Record<string, unknown> = {}) {
     if (event === 'room:create') {
-      if (this.sessionId && this.isConnected) {
+      if (this.sessionId) {
         this.dispatch('room:created', {
           sessionId: this.sessionId,
           hostUrl: typeof window !== 'undefined' ? window.location.origin : '',
@@ -162,28 +132,21 @@ export class HostRealtimeChannel implements RealtimeChannel {
       return;
     }
 
-    // Send game updates to mobile controller via WebRTC DataChannel
-    if (this.connection && this.connection.open) {
-      this.connection.send({ type: event, ...data });
+    if (event === 'game:sync' || event === 'game:command') {
+      if (this.sendGameSync) {
+        this.sendGameSync(data as unknown as DataPayload).catch(() => {});
+      }
     }
   }
 
   public resetRoom() {
-    if (this.connection) {
+    if (this.room) {
       try {
-        this.connection.close();
+        this.room.leave().catch(() => {});
       } catch {
         // ignore
       }
-      this.connection = null;
-    }
-    if (this.peer) {
-      try {
-        this.peer.destroy();
-      } catch {
-        // ignore
-      }
-      this.peer = null;
+      this.room = null;
     }
     this.isConnected = false;
     this.init();
@@ -204,21 +167,13 @@ export class HostRealtimeChannel implements RealtimeChannel {
 
   public disconnect() {
     this.isDestroyed = true;
-    if (this.connection) {
+    if (this.room) {
       try {
-        this.connection.close();
+        this.room.leave().catch(() => {});
       } catch {
         // ignore
       }
-      this.connection = null;
-    }
-    if (this.peer) {
-      try {
-        this.peer.destroy();
-      } catch {
-        // ignore
-      }
-      this.peer = null;
+      this.room = null;
     }
     this.isConnected = false;
     this.listeners.clear();
@@ -229,12 +184,17 @@ export class HostRealtimeChannel implements RealtimeChannel {
 // 2. Controller Channel (Mobile Light Gun)
 // ----------------------------------------------------
 export class ControllerRealtimeChannel implements RealtimeChannel {
-  private peer: PeerType | null = null;
-  private connection: DataConnection | null = null;
+  private room: Room | null = null;
   private listeners: Map<string, Set<RealtimeEventHandler>> = new Map();
   public sessionId: string = '';
   public isConnected: boolean = false;
   private isDestroyed: boolean = false;
+
+  // Action senders
+  private sendAim: ((data: DataPayload) => Promise<void>) | null = null;
+  private sendTrigger: ((data: DataPayload) => Promise<void>) | null = null;
+  private sendCalibrated: ((data: DataPayload) => Promise<void>) | null = null;
+  private sendGameCommand: ((data: DataPayload) => Promise<void>) | null = null;
 
   constructor(sessionId: string) {
     this.sessionId = sessionId.toUpperCase().trim();
@@ -245,75 +205,55 @@ export class ControllerRealtimeChannel implements RealtimeChannel {
     if (typeof window === 'undefined' || !this.sessionId) return;
 
     try {
-      const { default: Peer } = await import('peerjs');
+      const { joinRoom } = await import('trystero');
       if (this.isDestroyed) return;
 
-      const peer = new Peer({
-        debug: 0,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:global.stun.twilio.com:3478' },
-          ],
+      const roomId = `goose-hunter-room-${this.sessionId}`;
+
+      const room = joinRoom(
+        {
+          appId: 'goose-hunter-motion-arcade-v1',
         },
-      });
+        roomId
+      );
 
-      this.peer = peer;
+      this.room = room;
 
-      peer.on('open', () => {
-        this.connectToHost();
-      });
+      // Register actions
+      const aimAction = room.makeAction('aim');
+      const triggerAction = room.makeAction('trigger');
+      const calibratedAction = room.makeAction('calibrated');
+      const gameSyncAction = room.makeAction('gameSync');
+      const gameCommandAction = room.makeAction('gameCommand');
 
-      peer.on('error', (err: unknown) => {
-        const pErr = err as PeerErrorWithCode;
-        console.warn('[Controller WebRTC] Peer error:', err);
-        if (pErr?.type === 'peer-unavailable') {
-          this.dispatch('room:error', {
-            message: `Room "${this.sessionId}" was not found or has expired. Make sure the desktop screen is open.`,
-          });
-        }
-      });
-    } catch (err) {
-      console.error('[Controller WebRTC] Init failed:', err);
-    }
-  }
+      this.sendAim = (data) => aimAction.send(data);
+      this.sendTrigger = (data) => triggerAction.send(data);
+      this.sendCalibrated = (data) => calibratedAction.send(data);
+      this.sendGameCommand = (data) => gameCommandAction.send(data);
 
-  private connectToHost() {
-    if (!this.peer || !this.sessionId) return;
+      gameSyncAction.onMessage = (data) => {
+        this.dispatch('game:sync', data as Record<string, unknown>);
+      };
 
-    const hostPeerId = `goose-hunter-room-${this.sessionId}`;
-    const conn = this.peer.connect(hostPeerId, {
-      reliable: true,
-    });
+      room.onPeerJoin = (peerId: string) => {
+        this.isConnected = true;
+        this.dispatch('connect', { peerId });
+        this.dispatch('room:joined', { sessionId: this.sessionId, hostId: peerId });
+      };
 
-    this.connection = conn;
+      room.onPeerLeave = (peerId: string) => {
+        this.isConnected = false;
+        this.dispatch('disconnect', { peerId });
+        this.dispatch('room:error', { message: 'Desktop host disconnected.' });
+      };
 
-    conn.on('open', () => {
-      this.isConnected = true;
+      // Optimistic connect trigger
       this.dispatch('connect', {});
       this.dispatch('room:joined', { sessionId: this.sessionId });
-      conn.send({ type: 'room:join', sessionId: this.sessionId });
-    });
-
-    conn.on('data', (raw: unknown) => {
-      if (!raw || typeof raw !== 'object') return;
-      const message = raw as Record<string, unknown>;
-      const { type, ...payload } = message;
-      if (typeof type === 'string') {
-        this.dispatch(type, payload);
-      }
-    });
-
-    conn.on('close', () => {
-      this.isConnected = false;
-      this.dispatch('disconnect', {});
-      this.dispatch('room:error', { message: 'Desktop host disconnected.' });
-    });
-
-    conn.on('error', (err) => {
-      console.warn('[Controller WebRTC] Connection error:', err);
-      this.dispatch('room:error', { message: 'Failed to connect to host room.' });
-    });
+    } catch (err) {
+      console.error('[Controller Realtime] Init error:', err);
+      this.dispatch('room:error', { message: 'Failed to connect to room.' });
+    }
   }
 
   public on(event: string, handler: RealtimeEventHandler) {
@@ -335,26 +275,47 @@ export class ControllerRealtimeChannel implements RealtimeChannel {
       const targetSessionId = typeof data.sessionId === 'string' ? data.sessionId : '';
       if (targetSessionId && targetSessionId !== this.sessionId) {
         this.sessionId = targetSessionId.toUpperCase().trim();
-        this.connectToHost();
-      } else if (this.connection && this.connection.open) {
-        this.connection.send({ type: 'room:join', sessionId: this.sessionId });
+        if (this.room) {
+          this.room.leave().catch(() => {});
+          this.room = null;
+        }
+        this.init();
       }
       return;
     }
 
-    // Direct streaming over WebRTC
-    if (this.connection && this.connection.open) {
-      this.connection.send({ type: event, ...data });
+    if (event === 'motion:aim') {
+      if (this.sendAim) {
+        this.sendAim(data as unknown as DataPayload).catch(() => {});
+      }
+      return;
+    }
+
+    if (event === 'controller:trigger') {
+      if (this.sendTrigger) {
+        this.sendTrigger(data as unknown as DataPayload).catch(() => {});
+      }
+      return;
+    }
+
+    if (event === 'controller:calibrated') {
+      if (this.sendCalibrated) {
+        this.sendCalibrated(data as unknown as DataPayload).catch(() => {});
+      }
+      return;
+    }
+
+    if (event === 'game:command') {
+      if (this.sendGameCommand) {
+        this.sendGameCommand(data as unknown as DataPayload).catch(() => {});
+      }
+      return;
     }
   }
 
   public connect() {
-    if (!this.isConnected) {
-      if (this.peer && !this.peer.destroyed) {
-        this.connectToHost();
-      } else {
-        this.init();
-      }
+    if (!this.room) {
+      this.init();
     }
   }
 
@@ -373,21 +334,13 @@ export class ControllerRealtimeChannel implements RealtimeChannel {
 
   public disconnect() {
     this.isDestroyed = true;
-    if (this.connection) {
+    if (this.room) {
       try {
-        this.connection.close();
+        this.room.leave().catch(() => {});
       } catch {
         // ignore
       }
-      this.connection = null;
-    }
-    if (this.peer) {
-      try {
-        this.peer.destroy();
-      } catch {
-        // ignore
-      }
-      this.peer = null;
+      this.room = null;
     }
     this.isConnected = false;
     this.listeners.clear();
