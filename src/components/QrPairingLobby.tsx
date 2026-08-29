@@ -10,6 +10,8 @@ interface QrPairingLobbyProps {
   controllerConnected: boolean;
 }
 
+const emptySubscribe = () => () => {};
+
 export const QrPairingLobby: React.FC<QrPairingLobbyProps> = ({
   sessionId,
   onStartSoloMouse,
@@ -18,8 +20,14 @@ export const QrPairingLobby: React.FC<QrPairingLobbyProps> = ({
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
 
+  const isClient = React.useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
+
   const joinUrl =
-    typeof window !== 'undefined' && sessionId
+    isClient && sessionId
       ? `${window.location.origin}/controller?session=${sessionId}`
       : '';
 
