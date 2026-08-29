@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { QrPairingLobby } from '@/components/QrPairingLobby';
 import { DesktopArena } from '@/components/DesktopArena';
-import { getSocket } from '@/lib/socket-client';
+import { getHostChannel } from '@/lib/realtime-client';
 import { audioManager } from '@/engine/AudioManager';
 
 export default function DesktopPage() {
@@ -14,11 +14,11 @@ export default function DesktopPage() {
   const [isSoloMouse, setIsSoloMouse] = useState<boolean>(false);
 
   useEffect(() => {
-    const socket = getSocket();
+    const channel = getHostChannel();
 
-    const handleRoomCreated = (data: { sessionId: string; hostUrl?: string }) => {
-      setSessionId(data.sessionId);
-      if (data.hostUrl) setServerHostUrl(data.hostUrl);
+    const handleRoomCreated = (data: Record<string, unknown>) => {
+      if (typeof data.sessionId === 'string') setSessionId(data.sessionId);
+      if (typeof data.hostUrl === 'string') setServerHostUrl(data.hostUrl);
     };
 
     const handleControllerConnected = () => {
@@ -38,25 +38,25 @@ export default function DesktopPage() {
     };
 
     const handleConnect = () => {
-      socket.emit('room:create');
+      channel.emit('room:create');
     };
 
-    socket.on('connect', handleConnect);
-    socket.on('room:created', handleRoomCreated);
-    socket.on('controller:connected', handleControllerConnected);
-    socket.on('controller:calibrated', handleControllerCalibrated);
-    socket.on('controller:disconnected', handleControllerDisconnected);
+    channel.on('connect', handleConnect);
+    channel.on('room:created', handleRoomCreated);
+    channel.on('controller:connected', handleControllerConnected);
+    channel.on('controller:calibrated', handleControllerCalibrated);
+    channel.on('controller:disconnected', handleControllerDisconnected);
 
-    if (socket.connected) {
-      socket.emit('room:create');
+    if (channel.isConnected) {
+      channel.emit('room:create');
     }
 
     return () => {
-      socket.off('connect', handleConnect);
-      socket.off('room:created', handleRoomCreated);
-      socket.off('controller:connected', handleControllerConnected);
-      socket.off('controller:calibrated', handleControllerCalibrated);
-      socket.off('controller:disconnected', handleControllerDisconnected);
+      channel.off('connect', handleConnect);
+      channel.off('room:created', handleRoomCreated);
+      channel.off('controller:connected', handleControllerConnected);
+      channel.off('controller:calibrated', handleControllerCalibrated);
+      channel.off('controller:disconnected', handleControllerDisconnected);
     };
   }, []);
 
@@ -71,8 +71,8 @@ export default function DesktopPage() {
     setInGame(false);
     setIsSoloMouse(false);
     // Request fresh room
-    const socket = getSocket();
-    socket.emit('room:create');
+    const channel = getHostChannel();
+    channel.resetRoom();
   };
 
   const handleToggleSoloMode = () => {

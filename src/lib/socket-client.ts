@@ -11,7 +11,8 @@ export function getSocket(): Socket {
   }
 
   if (!socket) {
-    socket = io({
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || undefined;
+    socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
       reconnection: true,

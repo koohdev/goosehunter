@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Crosshair, RotateCcw, Zap, AlertTriangle, RefreshCw, Smartphone } from 'lucide-react';
 import { motionSensor } from '@/lib/motion-sensor';
-import { getSocket } from '@/lib/socket-client';
+import { getControllerChannel } from '@/lib/realtime-client';
 import { audioManager } from '@/engine/AudioManager';
 
 interface MobileControllerProps {
@@ -24,13 +24,13 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
   const lastAimRef = useRef({ x: 0, y: 0 });
   const aimThrottleRef = useRef<number>(0);
 
-  // 1. Socket connection & Room join
+  // 1. Realtime P2P connection & Room join
   useEffect(() => {
     if (!sessionId) return;
-    const socket = getSocket();
+    const channel = getControllerChannel(sessionId);
 
     const joinRoom = () => {
-      socket.emit('room:join', { sessionId });
+      channel.emit('room:join', { sessionId });
     };
 
     const handleConnect = () => {
@@ -48,42 +48,39 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
       setControllerState((prev) => (prev === 'ERROR' ? 'PERMISSION' : prev));
     };
 
-    const handleRoomError = (data: { message: string }) => {
-      setErrorMessage(data.message || 'Room not found.');
+    const handleRoomError = (data: Record<string, unknown>) => {
+      const message = typeof data.message === 'string' ? data.message : 'Room not found.';
+      setErrorMessage(message);
       setControllerState('ERROR');
     };
 
-    const handleGameSync = (data: {
-      action?: string;
-      status?: string;
-      score?: number;
-      bullets?: number;
-      level?: number;
-    }) => {
-      if (data.status) setRoundStatus(data.status as 'PLAYING' | 'ROUND_WON' | 'GAME_OVER' | 'LOBBY');
+    const handleGameSync = (data: Record<string, unknown>) => {
+      if (typeof data.status === 'string') {
+        setRoundStatus(data.status as 'PLAYING' | 'ROUND_WON' | 'GAME_OVER' | 'LOBBY');
+      }
       setGameState((prev) => ({
-        score: data.score !== undefined ? data.score : prev.score,
-        bullets: data.bullets !== undefined ? data.bullets : prev.bullets,
-        level: data.level !== undefined ? data.level : prev.level,
+        score: typeof data.score === 'number' ? data.score : prev.score,
+        bullets: typeof data.bullets === 'number' ? data.bullets : prev.bullets,
+        level: typeof data.level === 'number' ? data.level : prev.level,
       }));
     };
 
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-    socket.on('room:joined', handleJoined);
-    socket.on('room:error', handleRoomError);
-    socket.on('game:sync', handleGameSync);
+    channel.on('connect', handleConnect);
+    channel.on('disconnect', handleDisconnect);
+    channel.on('room:joined', handleJoined);
+    channel.on('room:error', handleRoomError);
+    channel.on('game:sync', handleGameSync);
 
-    if (socket.connected) {
+    if (channel.isConnected) {
       handleConnect();
     }
 
     return () => {
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-      socket.off('room:joined', handleJoined);
-      socket.off('room:error', handleRoomError);
-      socket.off('game:sync', handleGameSync);
+      channel.off('connect', handleConnect);
+      channel.off('disconnect', handleDisconnect);
+      channel.off('room:joined', handleJoined);
+      channel.off('room:error', handleRoomError);
+      channel.off('game:sync', handleGameSync);
     };
   }, [sessionId]);
 
@@ -112,12 +109,12 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
           lastAimRef.current = coords;
           setCurrentAim(coords);
 
-          // Stream to socket (throttled to ~60fps / 16ms)
+          // Stream to channel (throttled to ~60fps / 16ms)
           const now = Date.now();
           if (now - aimThrottleRef.current >= 16) {
             aimThrottleRef.current = now;
-            const socket = getSocket();
-            socket.emit('motion:aim', {
+            const channel = getControllerChannel(sessionId);
+            channel.emit('motion:aim', {
               sessionId,
               x: coords.x,
               y: coords.y,
@@ -127,8 +124,8 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
         });
 
         // Notify server that calibration is done
-        const socket = getSocket();
-        socket.emit('controller:calibrated', { sessionId });
+        const channel = getControllerChannel(sessionId);
+        channel.emit('controller:calibrated', { sessionId });
         setControllerState('READY');
         setRoundStatus('PLAYING');
       }
@@ -148,8 +145,8 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
     motionSensor.triggerHaptic(45);
     audioManager.playSound('click');
 
-    const socket = getSocket();
-    socket.emit('controller:trigger', {
+    const channel = getControllerChannel(sessionId);
+    channel.emit('controller:trigger', {
       sessionId,
       x: lastAimRef.current.x,
       y: lastAimRef.current.y,
@@ -159,17 +156,15 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
 
   // 5. Send Game Command (Next Level / Restart)
   const sendGameCommand = (action: 'START' | 'NEXT_LEVEL' | 'RESTART') => {
-    const socket = getSocket();
-    socket.emit('game:command', { sessionId, action });
+    const channel = getControllerChannel(sessionId);
+    channel.emit('game:command', { sessionId, action });
   };
 
   const handleRetryJoin = () => {
     setErrorMessage('');
-    const socket = getSocket();
-    if (!socket.connected) {
-      socket.connect();
-    }
-    socket.emit('room:join', { sessionId });
+    const channel = getControllerChannel(sessionId);
+    channel.connect();
+    channel.emit('room:join', { sessionId });
     setControllerState('PERMISSION');
   };
 

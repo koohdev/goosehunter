@@ -20,10 +20,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="h-full bg-black antialiased" suppressHydrationWarning>
-      <head>
-        {/* Prioritized primary arena background */}
-        <link rel="preload" as="image" href="/images/background.png" fetchPriority="high" />
-      </head>
+
       <body
         className="min-h-full flex flex-col bg-zinc-950 text-white selection:bg-emerald-500 selection:text-black"
         suppressHydrationWarning

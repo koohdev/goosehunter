@@ -5,7 +5,7 @@ import { GameEngine } from '@/engine/GameEngine';
 import { LevelManager, LEVEL_CONFIGS } from '@/engine/LevelManager';
 import { ArcadeHUD } from '@/components/ArcadeHUD';
 import { VictoryModal } from '@/components/VictoryModal';
-import { getSocket } from '@/lib/socket-client';
+import { getHostChannel } from '@/lib/realtime-client';
 import { audioManager } from '@/engine/AudioManager';
 import { GameRoundState, LevelConfig } from '@/lib/types';
 
@@ -80,8 +80,8 @@ export const DesktopArena: React.FC<DesktopArenaProps> = ({
       setLevelConfig(lm.getCurrentConfig());
 
       // Sync state to mobile controller
-      const socket = getSocket();
-      socket.emit('game:command', {
+      const channel = getHostChannel();
+      channel.emit('game:sync', {
         sessionId,
         status: updatedState.status,
         score: updatedState.score,
@@ -109,14 +109,15 @@ export const DesktopArena: React.FC<DesktopArenaProps> = ({
     }
   }, [isSoloMouse]);
 
-  // 2. Socket Listeners for Motion Aiming & Trigger
+  // 2. Realtime Listeners for Motion Aiming & Trigger
   useEffect(() => {
-    if (!sessionId) return;
-    const socket = getSocket();
+    const channel = getHostChannel();
 
-    const handleAimUpdate = (data: { x: number; y: number }) => {
+    const handleAimUpdate = (data: Record<string, unknown>) => {
+      const x = typeof data.x === 'number' ? data.x : 0;
+      const y = typeof data.y === 'number' ? data.y : 0;
       if (engineRef.current && !levelManagerRef.current.getState().isSoloMouseMode) {
-        engineRef.current.setNormalizedAim(data.x, data.y);
+        engineRef.current.setNormalizedAim(x, y);
       }
     };
 
@@ -126,7 +127,7 @@ export const DesktopArena: React.FC<DesktopArenaProps> = ({
       }
     };
 
-    const handleGameCommand = (data: { action?: string }) => {
+    const handleGameCommand = (data: Record<string, unknown>) => {
       if (data.action === 'NEXT_LEVEL') {
         nextLevel();
       } else if (data.action === 'RESTART') {
@@ -134,14 +135,14 @@ export const DesktopArena: React.FC<DesktopArenaProps> = ({
       }
     };
 
-    socket.on('aim:update', handleAimUpdate);
-    socket.on('trigger:fired', handleTriggerFired);
-    socket.on('game:sync', handleGameCommand);
+    channel.on('aim:update', handleAimUpdate);
+    channel.on('trigger:fired', handleTriggerFired);
+    channel.on('game:sync', handleGameCommand);
 
     return () => {
-      socket.off('aim:update', handleAimUpdate);
-      socket.off('trigger:fired', handleTriggerFired);
-      socket.off('game:sync', handleGameCommand);
+      channel.off('aim:update', handleAimUpdate);
+      channel.off('trigger:fired', handleTriggerFired);
+      channel.off('game:sync', handleGameCommand);
     };
   }, [sessionId]);
 
