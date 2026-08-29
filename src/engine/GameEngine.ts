@@ -24,6 +24,28 @@ interface SparkParticle {
   radius: number;
 }
 
+interface ShellCasing {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rotation: number;
+  vRot: number;
+  alpha: number;
+  bounces: number;
+}
+
+interface SmokeParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  alpha: number;
+  life: number;
+  maxLife: number;
+}
+
 export class GameEngine {
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
@@ -33,20 +55,29 @@ export class GameEngine {
   private animFrameId: number | null = null;
   private lastTime: number = 0;
 
-  // Crosshair state (pixel coordinates within canvas)
+  // Crosshair state (pixel coordinates within canvas 800x570)
   private aimX: number = 400;
   private aimY: number = 300;
-  private isMuzzleFlashing: boolean = false;
+
+  // Shotgun state & physics
+  private recoilY: number = 0;
+  private recoilRot: number = 0;
   private muzzleFlashTimer: number = 0;
+  private readonly maxFlashDuration: number = 0.085;
 
   // Visual effects
   private floatingTexts: FloatingText[] = [];
   private sparks: SparkParticle[] = [];
+  private shells: ShellCasing[] = [];
+  private smoke: SmokeParticle[] = [];
 
-  // Background image
+  // Assets
   private bgImage: HTMLImageElement | null = null;
   private bgCache: Map<string, HTMLImageElement> = new Map();
   private crosshairImage: HTMLImageElement | null = null;
+  private shotgunImage: HTMLImageElement | null = null;
+  private flashImage: HTMLImageElement | null = null;
+  private shellImage: HTMLImageElement | null = null;
 
   // Callback
   private onStateChange: ((state: GameRoundState) => void) | null = null;
@@ -60,6 +91,9 @@ export class GameEngine {
   private preloadBackgrounds() {
     if (typeof window === 'undefined') return;
     const bgList = [
+      '/images/arcade-bg-marsh-day.png',
+      '/images/arcade-bg-marsh-dusk.png',
+      '/images/arcade-bg-marsh-snow.png',
       '/images/background.png',
       '/images/background-4.png',
       '/images/background-selection-4.png',
@@ -88,9 +122,21 @@ export class GameEngine {
   private loadAssets() {
     if (typeof window === 'undefined') return;
 
-    // Preload crosshair
+    // Crosshair
     this.crosshairImage = new Image();
     this.crosshairImage.src = '/images/crosshair062.png';
+
+    // Shotgun weapon sprite
+    this.shotgunImage = new Image();
+    this.shotgunImage.src = '/images/shotgun-fps.png';
+
+    // Muzzle blast flash sprite
+    this.flashImage = new Image();
+    this.flashImage.src = '/images/shotgun-flash-main.png';
+
+    // Shotgun shell casing sprite
+    this.shellImage = new Image();
+    this.shellImage.src = '/images/shotgun-shell.png';
 
     this.updateBackground();
   }
@@ -128,6 +174,11 @@ export class GameEngine {
     this.gooseManager.reset();
     this.floatingTexts = [];
     this.sparks = [];
+    this.shells = [];
+    this.smoke = [];
+    this.recoilY = 0;
+    this.recoilRot = 0;
+    this.muzzleFlashTimer = 0;
     this.updateBackground();
     audioManager.resumeBgm();
     audioManager.playSound('start');
@@ -161,8 +212,8 @@ export class GameEngine {
     }
 
     const now = performance.now();
-    // Gun cooldown guard (prevents duplicate rapid trigger events within 120ms)
-    if (now - this.lastShotTime < 120) {
+    // Gun cooldown guard (prevents duplicate rapid trigger events within 110ms)
+    if (now - this.lastShotTime < 110) {
       const state = this.levelManager.getState();
       return {
         hit: false,
@@ -185,17 +236,58 @@ export class GameEngine {
       };
     }
 
-    // Trigger visual muzzle flash
-    this.isMuzzleFlashing = true;
-    this.muzzleFlashTimer = 0.08;
+    // 1. Trigger dynamic shotgun recoil & flash
+    this.recoilY = 32;
+    this.recoilRot = -0.07;
+    this.muzzleFlashTimer = this.maxFlashDuration;
 
-    // Play gunshot sound
+    // 2. Play gunshot sound
     audioManager.playSound('gunshot');
 
-    // Spawn sparks at aim
-    this.spawnImpactSparks(this.aimX, this.aimY);
+    // 3. Compute shotgun geometry for shell eject & muzzle tip effects
+    const gunBaseX = 400 + (this.aimX - 400) * 0.28;
+    const gunBaseY = this.canvas.height + 35;
+    const dx = this.aimX - gunBaseX;
+    const dy = this.aimY - (gunBaseY - 140);
+    const rawAngle = Math.atan2(dx, -dy);
+    const gunAngle = Math.max(-0.60, Math.min(0.60, rawAngle));
 
-    // Hit test against flying geese
+    const tipDist = 250;
+    const tipX = gunBaseX + Math.sin(gunAngle) * tipDist;
+    const tipY = gunBaseY - Math.cos(gunAngle) * tipDist;
+
+    // 4. Eject shotgun shell casing
+    const chamberX = gunBaseX + Math.sin(gunAngle) * 90 + Math.cos(gunAngle) * 22;
+    const chamberY = gunBaseY - Math.cos(gunAngle) * 90 + Math.sin(gunAngle) * 22;
+    this.shells.push({
+      x: chamberX,
+      y: chamberY,
+      vx: 5.0 + Math.random() * 3.0,
+      vy: -6.5 - Math.random() * 2.5,
+      rotation: Math.random() * Math.PI,
+      vRot: (Math.random() * 12 + 8) * (Math.random() > 0.5 ? 1 : -1),
+      alpha: 1,
+      bounces: 0,
+    });
+
+    // 5. Spawn barrel muzzle smoke puffs
+    for (let i = 0; i < 4; i++) {
+      this.smoke.push({
+        x: tipX + (Math.random() - 0.5) * 12,
+        y: tipY + (Math.random() - 0.5) * 12,
+        vx: Math.sin(gunAngle) * (Math.random() * 2 + 1) + (Math.random() - 0.5) * 1.5,
+        vy: -Math.cos(gunAngle) * (Math.random() * 2 + 1) - (Math.random() * 1.5 + 1),
+        radius: 8 + Math.random() * 6,
+        alpha: 0.5,
+        life: 0,
+        maxLife: 0.7 + Math.random() * 0.35,
+      });
+    }
+
+    // 6. Spawn fiery muzzle blast sparks towards aim
+    this.spawnImpactSparks(this.aimX, this.aimY, tipX, tipY, gunAngle);
+
+    // 7. Hit test against flying geese
     const { hit, goose } = this.gooseManager.checkHit(this.aimX, this.aimY);
 
     let points = 0;
@@ -237,13 +329,30 @@ export class GameEngine {
     };
   }
 
-  private spawnImpactSparks(x: number, y: number) {
+  private spawnImpactSparks(targetX: number, targetY: number, muzzleX: number, muzzleY: number, gunAngle: number) {
+    // Tracer sparks along shot path
+    for (let i = 0; i < 8; i++) {
+      const spread = (Math.random() - 0.5) * 0.15;
+      const angle = gunAngle - Math.PI / 2 + spread;
+      const speed = Math.random() * 6 + 3;
+      this.sparks.push({
+        x: muzzleX,
+        y: muzzleY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        color: Math.random() > 0.3 ? '#fef08a' : '#f97316',
+        alpha: 1,
+        radius: Math.random() * 2.5 + 1.2,
+      });
+    }
+
+    // Impact sparks at crosshair
     for (let i = 0; i < 14; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * 5 + 2;
       this.sparks.push({
-        x,
-        y,
+        x: targetX,
+        y: targetY,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
         color: Math.random() > 0.4 ? '#fef08a' : '#f97316',
@@ -271,20 +380,61 @@ export class GameEngine {
     const config = this.levelManager.getCurrentConfig();
     const state = this.levelManager.getState();
 
-    // 1. Update geese physics & flight paths if in active round
+    // 1. Update geese physics & flight paths
     if (state.status === 'PLAYING') {
       this.gooseManager.update(deltaTime, this.canvas.width, this.canvas.height, config);
     }
 
-    // 2. Update muzzle flash timer
-    if (this.isMuzzleFlashing) {
+    // 2. Shotgun recoil recovery spring physics
+    this.recoilY *= Math.exp(-14 * deltaTime);
+    this.recoilRot *= Math.exp(-16 * deltaTime);
+    if (Math.abs(this.recoilY) < 0.2) this.recoilY = 0;
+    if (Math.abs(this.recoilRot) < 0.002) this.recoilRot = 0;
+
+    // 3. Muzzle flash timer
+    if (this.muzzleFlashTimer > 0) {
       this.muzzleFlashTimer -= deltaTime;
-      if (this.muzzleFlashTimer <= 0) {
-        this.isMuzzleFlashing = false;
+      if (this.muzzleFlashTimer < 0) this.muzzleFlashTimer = 0;
+    }
+
+    // 4. Update ejected shells
+    for (let i = this.shells.length - 1; i >= 0; i--) {
+      const s = this.shells[i];
+      s.x += s.vx * deltaTime * 60;
+      s.y += s.vy * deltaTime * 60;
+      s.vy += 18 * deltaTime; // gravity
+      s.rotation += s.vRot * deltaTime;
+
+      // Bounce once off bottom
+      if (s.y > this.canvas.height - 25 && s.bounces === 0) {
+        s.y = this.canvas.height - 25;
+        s.vy = -s.vy * 0.45;
+        s.vx *= 0.6;
+        s.vRot *= 0.5;
+        s.bounces += 1;
+      }
+
+      s.alpha -= 0.65 * deltaTime;
+      if (s.alpha <= 0 || s.y > this.canvas.height + 40) {
+        this.shells.splice(i, 1);
       }
     }
 
-    // 3. Update floating point texts
+    // 5. Update barrel smoke particles
+    for (let i = this.smoke.length - 1; i >= 0; i--) {
+      const sm = this.smoke[i];
+      sm.life += deltaTime;
+      if (sm.life >= sm.maxLife) {
+        this.smoke.splice(i, 1);
+        continue;
+      }
+      sm.x += sm.vx * deltaTime * 60;
+      sm.y += sm.vy * deltaTime * 60;
+      sm.radius += 14 * deltaTime;
+      sm.alpha = Math.max(0, (1 - sm.life / sm.maxLife) * 0.45);
+    }
+
+    // 6. Update floating point texts
     for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
       const ft = this.floatingTexts[i];
       ft.y -= 40 * deltaTime;
@@ -294,7 +444,7 @@ export class GameEngine {
       }
     }
 
-    // 4. Update sparks
+    // 7. Update sparks
     for (let i = this.sparks.length - 1; i >= 0; i--) {
       const s = this.sparks[i];
       s.x += s.vx * deltaTime * 60;
@@ -315,19 +465,18 @@ export class GameEngine {
 
     ctx.clearRect(0, 0, w, h);
 
-    // 1. Render Layer: Background Image / Gradient
+    // 1. Render Background Image / Gradient
     if (this.bgImage && this.bgImage.complete && this.bgImage.naturalWidth > 0) {
-      ctx.imageSmoothingEnabled = false;
+      ctx.imageSmoothingEnabled = true;
       ctx.drawImage(this.bgImage, 0, 0, w, h);
     } else {
-      // Procedural Retro Sky & Forest Fallback
       this.drawProceduralBackground(ctx, w, h);
     }
 
-    // 2. Render Layer: Animated Geese
+    // 2. Render Animated Geese & Feathers
     this.gooseManager.render(ctx);
 
-    // 3. Render Layer: Sparks & Particles
+    // 3. Render Sparks & Impact Particles
     for (const s of this.sparks) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, s.alpha);
@@ -338,7 +487,41 @@ export class GameEngine {
       ctx.restore();
     }
 
-    // 5. Render Layer: Floating Score Indicators
+    // 4. Render Ejected Shotgun Shell Casings
+    for (const shell of this.shells) {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, shell.alpha);
+      ctx.translate(shell.x, shell.y);
+      ctx.rotate(shell.rotation);
+
+      if (this.shellImage && this.shellImage.complete && this.shellImage.naturalWidth > 0) {
+        const sw = 22;
+        const sh = 22;
+        ctx.drawImage(this.shellImage, -sw / 2, -sh / 2, sw, sh);
+      } else {
+        ctx.fillStyle = '#dc2626';
+        ctx.fillRect(-8, -4, 16, 8);
+        ctx.fillStyle = '#eab308';
+        ctx.fillRect(-8, -4, 4, 8);
+      }
+      ctx.restore();
+    }
+
+    // 5. Render Barrel Smoke Puffs
+    for (const sm of this.smoke) {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, sm.alpha);
+      ctx.fillStyle = '#d4d4d8';
+      ctx.beginPath();
+      ctx.arc(sm.x, sm.y, sm.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 6. Render First-Person Shotgun & Muzzle Blast
+    this.drawShotgun(ctx, w, h);
+
+    // 7. Render Floating Score Indicators
     for (const ft of this.floatingTexts) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, ft.alpha);
@@ -351,57 +534,113 @@ export class GameEngine {
       ctx.restore();
     }
 
-    // 6. Render Layer: Muzzle Flash
-    if (this.isMuzzleFlashing) {
+    // 8. Render Screen Flash on Shot
+    if (this.muzzleFlashTimer > 0) {
+      const flashRatio = this.muzzleFlashTimer / this.maxFlashDuration;
       ctx.save();
-      ctx.fillStyle = 'rgba(255, 255, 230, 0.45)';
+      ctx.fillStyle = `rgba(255, 255, 220, ${0.35 * flashRatio})`;
       ctx.fillRect(0, 0, w, h);
       ctx.restore();
     }
 
-    // 7. Render Layer: Crosshair Reticle
+    // 9. Render Crosshair Reticle
     this.drawCrosshair(ctx, this.aimX, this.aimY);
   }
 
-  private drawProceduralBackground(ctx: CanvasRenderingContext2D, w: number, h: number) {
-    const state = this.levelManager.getState();
-    const isSnow = state.currentLevel === 1;
+  private drawShotgun(ctx: CanvasRenderingContext2D, w: number, h: number) {
+    // Shotgun base pivot position with horizontal sway tracking the aim
+    const gunBaseX = w / 2 + (this.aimX - w / 2) * 0.28;
+    const gunBaseY = h + 38 + this.recoilY;
 
-    // Sky
+    // Angle towards aim position
+    const dx = this.aimX - gunBaseX;
+    const dy = this.aimY - (gunBaseY - 140);
+    const rawAngle = Math.atan2(dx, -dy);
+    const gunAngle = Math.max(-0.60, Math.min(0.60, rawAngle)) + this.recoilRot;
+
+    // Render Gun Sprite
+    const dw = 265;
+    const dh = 265;
+
+    ctx.save();
+    ctx.translate(gunBaseX, gunBaseY);
+    ctx.rotate(gunAngle);
+
+    if (this.shotgunImage && this.shotgunImage.complete && this.shotgunImage.naturalWidth > 0) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(this.shotgunImage, -dw / 2, -dh, dw, dh);
+    } else {
+      // Procedural Shotgun Fallback
+      this.drawProceduralShotgun(ctx, dw, dh);
+    }
+    ctx.restore();
+
+    // Render Muzzle Flash at barrel tip
+    if (this.muzzleFlashTimer > 0) {
+      const tipDist = 248 - this.recoilY * 0.4;
+      const tipX = gunBaseX + Math.sin(gunAngle) * tipDist;
+      const tipY = gunBaseY - Math.cos(gunAngle) * tipDist;
+
+      ctx.save();
+      ctx.translate(tipX, tipY);
+      ctx.rotate(gunAngle);
+
+      // Radial bright core glow
+      const flashGrad = ctx.createRadialGradient(0, 0, 8, 0, 0, 80);
+      flashGrad.addColorStop(0, 'rgba(255, 255, 200, 0.95)');
+      flashGrad.addColorStop(0.3, 'rgba(255, 170, 40, 0.7)');
+      flashGrad.addColorStop(1, 'rgba(255, 80, 0, 0)');
+      ctx.fillStyle = flashGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, 80, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Muzzle Flash Sprite Burst
+      if (this.flashImage && this.flashImage.complete && this.flashImage.naturalWidth > 0) {
+        const fw = 135;
+        const fh = 240;
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(this.flashImage, -fw / 2, -fh, fw, fh);
+      }
+      ctx.restore();
+    }
+  }
+
+  private drawProceduralShotgun(ctx: CanvasRenderingContext2D, dw: number, dh: number) {
+    // Barrels
+    ctx.fillStyle = '#3f3f46';
+    ctx.fillRect(-18, -dh, 36, dh - 80);
+
+    ctx.fillStyle = '#71717a';
+    ctx.fillRect(-14, -dh, 12, dh - 80);
+    ctx.fillRect(2, -dh, 12, dh - 80);
+
+    // Barrel rib
+    ctx.fillStyle = '#18181b';
+    ctx.fillRect(-2, -dh, 4, dh - 80);
+
+    // Stock & Grip
+    ctx.fillStyle = '#78350f';
+    ctx.beginPath();
+    ctx.moveTo(-24, -80);
+    ctx.lineTo(24, -80);
+    ctx.lineTo(36, 0);
+    ctx.lineTo(-36, 0);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  private drawProceduralBackground(ctx: CanvasRenderingContext2D, w: number, h: number) {
     const skyGradient = ctx.createLinearGradient(0, 0, 0, h - 140);
-    skyGradient.addColorStop(0, isSnow ? '#7dd3fc' : '#38bdf8');
-    skyGradient.addColorStop(1, isSnow ? '#e0f2fe' : '#bae6fd');
+    skyGradient.addColorStop(0, '#38bdf8');
+    skyGradient.addColorStop(1, '#bae6fd');
     ctx.fillStyle = skyGradient;
     ctx.fillRect(0, 0, w, h - 140);
 
-    // Clouds
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.beginPath();
-    ctx.arc(140, 80, 40, 0, Math.PI * 2);
-    ctx.arc(180, 70, 50, 0, Math.PI * 2);
-    ctx.arc(230, 80, 40, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(w - 200, 110, 35, 0, Math.PI * 2);
-    ctx.arc(w - 160, 100, 45, 0, Math.PI * 2);
-    ctx.arc(w - 120, 110, 35, 0, Math.PI * 2);
-    ctx.fill();
-
-    this.drawForeground(ctx, w, h);
-  }
-
-  private drawForeground(ctx: CanvasRenderingContext2D, w: number, h: number) {
-    const state = this.levelManager.getState();
-    const isSnow = state.currentLevel === 1;
-
-    // Ground line
     const groundY = h - 90;
-    ctx.fillStyle = isSnow ? '#f1f5f9' : '#854d0e';
+    ctx.fillStyle = '#854d0e';
     ctx.fillRect(0, groundY, w, 90);
-
-    // Grass/Dirt top stripe
-    ctx.fillStyle = isSnow ? '#cbd5e1' : '#166534';
+    ctx.fillStyle = '#166534';
     ctx.fillRect(0, groundY - 12, w, 12);
   }
 
@@ -417,7 +656,7 @@ export class GameEngine {
 
     // Procedural Arcade Crosshair Reticle
     ctx.save();
-    ctx.strokeStyle = '#ef4444'; // Bright Red
+    ctx.strokeStyle = '#ef4444';
     ctx.lineWidth = 2.5;
 
     // Outer circle
@@ -425,7 +664,7 @@ export class GameEngine {
     ctx.arc(x, y, 20, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Inner center dot
+    // Center dot
     ctx.fillStyle = '#ef4444';
     ctx.beginPath();
     ctx.arc(x, y, 3, 0, Math.PI * 2);

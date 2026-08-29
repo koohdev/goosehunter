@@ -1,7 +1,21 @@
 import { GooseTarget, LevelConfig } from '@/lib/types';
 
+export interface FeatherParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  angle: number;
+  angularVelocity: number;
+  scale: number;
+  alpha: number;
+  life: number;
+  maxLife: number;
+}
+
 export class GooseManager {
   private geese: GooseTarget[] = [];
+  private feathers: FeatherParticle[] = [];
   private sprites: Map<string, HTMLImageElement> = new Map();
   private lastSpawnTime: number = 0;
 
@@ -13,13 +27,14 @@ export class GooseManager {
     if (typeof window === 'undefined') return;
 
     const spritePaths: { key: string; src: string }[] = [
-      { key: 'goose_black_1', src: '/images/goose-black01.png' },
-      { key: 'goose_black_2', src: '/images/goose-black02.png' },
-      { key: 'goose_blue_1', src: '/images/goose-blue01.png' },
-      { key: 'goose_blue_2', src: '/images/goose-blue02.png' },
-      { key: 'goose_red_1', src: '/images/bird3.png' },
-      { key: 'goose_red_2', src: '/images/bird2.png' },
-      { key: 'goose_hit', src: '/images/hit.png' },
+      { key: 'goose_black_1', src: '/images/goose-black-v2-1.png' },
+      { key: 'goose_black_2', src: '/images/goose-black-v2-2.png' },
+      { key: 'goose_blue_1', src: '/images/goose-blue-v2-1.png' },
+      { key: 'goose_blue_2', src: '/images/goose-blue-v2-2.png' },
+      { key: 'goose_red_1', src: '/images/goose-red-v2-1.png' },
+      { key: 'goose_red_2', src: '/images/goose-red-v2-2.png' },
+      { key: 'goose_hit', src: '/images/goose-hit-v2.png' },
+      { key: 'goose_feather', src: '/images/goose-feather.png' },
     ];
 
     spritePaths.forEach(({ key, src }) => {
@@ -31,11 +46,16 @@ export class GooseManager {
 
   public reset() {
     this.geese = [];
+    this.feathers = [];
     this.lastSpawnTime = Date.now();
   }
 
   public getGeese(): GooseTarget[] {
     return this.geese;
+  }
+
+  public getFeathers(): FeatherParticle[] {
+    return this.feathers;
   }
 
   public update(deltaTime: number, width: number, height: number, config: LevelConfig) {
@@ -57,51 +77,51 @@ export class GooseManager {
         goose.y += goose.vy * deltaTime * 60;
 
         // Bounce horizontally on edges
-        if (goose.x < 20) {
-          goose.x = 20;
+        if (goose.x < 15) {
+          goose.x = 15;
           goose.vx = Math.abs(goose.vx);
           goose.direction = 1;
-        } else if (goose.x + goose.width > width - 20) {
-          goose.x = width - 20 - goose.width;
+        } else if (goose.x + goose.width > width - 15) {
+          goose.x = width - 15 - goose.width;
           goose.vx = -Math.abs(goose.vx);
           goose.direction = -1;
         }
 
         // Top ceiling escape or bounce
-        if (goose.y < 30) {
-          goose.y = 30;
-          goose.vy = Math.abs(goose.vy) * 0.8; // change flight angle
+        if (goose.y < 25) {
+          goose.y = 25;
+          goose.vy = Math.abs(goose.vy) * 0.85; // change flight angle
         }
 
         // Bottom floor bound
-        if (goose.y > height - 160) {
-          goose.y = height - 160;
+        if (goose.y > height - 170) {
+          goose.y = height - 170;
           goose.vy = -Math.abs(goose.vy);
         }
 
         // Wing flapping animation timer
         goose.frameTimer += deltaTime;
-        if (goose.frameTimer > 0.12) {
+        if (goose.frameTimer > 0.14) {
           goose.frameTimer = 0;
-          goose.frameIndex = (goose.frameIndex + 1) % 3;
+          goose.frameIndex = (goose.frameIndex + 1) % 2;
         }
 
         // Escape after duration
         goose.flightDuration += deltaTime;
         if (goose.flightDuration > 14) {
           goose.state = 'ESCAPED';
-          goose.vy = -4; // Fly away into clouds
+          goose.vy = -4.5; // Fly away into clouds
         }
       } else if (goose.state === 'HIT') {
         // Pause briefly in stunned state
         goose.frameTimer += deltaTime;
-        if (goose.frameTimer > 0.25) {
+        if (goose.frameTimer > 0.28) {
           goose.state = 'FALLING';
-          goose.vy = 2; // Begin fall
+          goose.vy = 2.5; // Begin fall
         }
       } else if (goose.state === 'FALLING') {
         // Accelerate downwards with gravity
-        goose.vy += 9.8 * deltaTime * 0.7;
+        goose.vy += 9.8 * deltaTime * 0.75;
         goose.y += goose.vy * deltaTime * 60;
 
         // Remove when hitting ground
@@ -110,10 +130,26 @@ export class GooseManager {
         }
       } else if (goose.state === 'ESCAPED') {
         goose.y += goose.vy * deltaTime * 60;
-        if (goose.y < -100) {
+        if (goose.y < -120) {
           this.geese.splice(i, 1);
         }
       }
+    }
+
+    // 3. Update feather particles
+    for (let i = this.feathers.length - 1; i >= 0; i--) {
+      const f = this.feathers[i];
+      f.life += deltaTime;
+      if (f.life >= f.maxLife) {
+        this.feathers.splice(i, 1);
+        continue;
+      }
+
+      f.x += (f.vx + Math.sin(f.life * 6) * 1.5) * deltaTime * 60;
+      f.y += f.vy * deltaTime * 60;
+      f.vy += 1.8 * deltaTime; // light drift gravity
+      f.angle += f.angularVelocity * deltaTime;
+      f.alpha = Math.max(0, 1 - f.life / f.maxLife);
     }
   }
 
@@ -133,8 +169,8 @@ export class GooseManager {
     }
 
     const direction: 1 | -1 = Math.random() > 0.5 ? 1 : -1;
-    const startX = direction === 1 ? 50 + Math.random() * 100 : width - 150 - Math.random() * 100;
-    const startY = height - 160 - Math.random() * 80;
+    const startX = direction === 1 ? 40 + Math.random() * 80 : width - 140 - Math.random() * 80;
+    const startY = height - 170 - Math.random() * 80;
 
     const angle = (Math.random() * 35 + 25) * (Math.PI / 180); // 25 to 60 degrees upward
     const vx = Math.cos(angle) * speed * direction;
@@ -149,8 +185,8 @@ export class GooseManager {
       vx,
       vy,
       speed,
-      width: 56,
-      height: 48,
+      width: 76,
+      height: 64,
       state: 'FLYING',
       frameIndex: 0,
       frameTimer: 0,
@@ -167,8 +203,8 @@ export class GooseManager {
       const goose = this.geese[i];
       if (goose.state !== 'FLYING') continue;
 
-      // Expanded hitbox for arcade feel (+12px tolerance)
-      const hitPadding = 12;
+      // Expanded hitbox for responsive arcade feel (+14px tolerance)
+      const hitPadding = 14;
       const left = goose.x - hitPadding;
       const right = goose.x + goose.width + hitPadding;
       const top = goose.y - hitPadding;
@@ -177,13 +213,38 @@ export class GooseManager {
       if (aimX >= left && aimX <= right && aimY >= top && aimY <= bottom) {
         goose.state = 'HIT';
         goose.frameTimer = 0;
+
+        // Spawn feather explosion burst!
+        this.spawnFeathers(goose.x + goose.width / 2, goose.y + goose.height / 2);
+
         return { hit: true, goose };
       }
     }
     return { hit: false };
   }
 
+  private spawnFeathers(cx: number, cy: number) {
+    const count = 10 + Math.floor(Math.random() * 6);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 4 + 1.5;
+      this.feathers.push({
+        x: cx + (Math.random() - 0.5) * 20,
+        y: cy + (Math.random() - 0.5) * 20,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 1.5,
+        angle: Math.random() * Math.PI * 2,
+        angularVelocity: (Math.random() - 0.5) * 6,
+        scale: Math.random() * 0.4 + 0.3,
+        alpha: 1,
+        life: 0,
+        maxLife: Math.random() * 0.8 + 0.8,
+      });
+    }
+  }
+
   public render(ctx: CanvasRenderingContext2D) {
+    // 1. Render Geese
     for (const goose of this.geese) {
       ctx.save();
 
@@ -191,6 +252,8 @@ export class GooseManager {
       const cy = goose.y + goose.height / 2;
 
       ctx.translate(cx, cy);
+
+      // Goose sprites face right by default. Flip if moving left
       if (goose.direction === -1 && goose.state !== 'FALLING') {
         ctx.scale(-1, 1);
       }
@@ -201,6 +264,30 @@ export class GooseManager {
 
       // Draw Goose Sprite or Retro Vector
       this.drawGooseSprite(ctx, goose);
+
+      ctx.restore();
+    }
+
+    // 2. Render Feathers
+    const featherSprite = this.sprites.get('goose_feather');
+    for (const f of this.feathers) {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, f.alpha);
+      ctx.translate(f.x, f.y);
+      ctx.rotate(f.angle);
+      ctx.scale(f.scale, f.scale);
+
+      if (featherSprite && featherSprite.complete && featherSprite.naturalWidth > 0) {
+        const fw = 32;
+        const fh = 32;
+        ctx.drawImage(featherSprite, -fw / 2, -fh / 2, fw, fh);
+      } else {
+        // Fallback procedural feather
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 8, 18, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       ctx.restore();
     }
@@ -220,6 +307,7 @@ export class GooseManager {
 
     const sprite = this.sprites.get(spriteKey);
     if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+      ctx.imageSmoothingEnabled = true;
       ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
     } else {
       // Procedural Retro Pixel Art Fallback
@@ -269,9 +357,6 @@ export class GooseManager {
     if (goose.frameIndex === 0) {
       // Wing UP
       ctx.ellipse(-4, -12, 12, 18, -0.3, 0, Math.PI * 2);
-    } else if (goose.frameIndex === 1) {
-      // Wing MID
-      ctx.ellipse(-4, 0, 16, 10, 0, 0, Math.PI * 2);
     } else {
       // Wing DOWN
       ctx.ellipse(-4, 14, 12, 16, 0.3, 0, Math.PI * 2);
@@ -289,3 +374,4 @@ export class GooseManager {
     ctx.fill();
   }
 }
+

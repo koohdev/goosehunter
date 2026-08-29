@@ -8,7 +8,7 @@ export const LEVEL_CONFIGS: Record<number, LevelConfig> = {
     simultaneousGeese: 2,
     baseSpeedMultiplier: 1.0,
     allowedTypes: ['BLACK', 'BLUE'],
-    themeBackground: '/images/background-4.png',
+    themeBackground: '/images/arcade-bg-marsh-day.png',
   },
   2: {
     level: 2,
@@ -17,7 +17,7 @@ export const LEVEL_CONFIGS: Record<number, LevelConfig> = {
     simultaneousGeese: 2,
     baseSpeedMultiplier: 1.25,
     allowedTypes: ['BLACK', 'BLUE', 'RED'],
-    themeBackground: '/images/background-selection-4.png',
+    themeBackground: '/images/arcade-bg-marsh-dusk.png',
   },
   3: {
     level: 3,
@@ -26,7 +26,7 @@ export const LEVEL_CONFIGS: Record<number, LevelConfig> = {
     simultaneousGeese: 3, // +1 extra goose
     baseSpeedMultiplier: 1.45,
     allowedTypes: ['BLACK', 'BLUE', 'RED'],
-    themeBackground: '/images/background.png',
+    themeBackground: '/images/arcade-bg-marsh-snow.png',
   },
   4: {
     level: 4,
@@ -35,7 +35,7 @@ export const LEVEL_CONFIGS: Record<number, LevelConfig> = {
     simultaneousGeese: 3,
     baseSpeedMultiplier: 1.65,
     allowedTypes: ['BLACK', 'BLUE', 'RED'],
-    themeBackground: '/images/background-selection.png',
+    themeBackground: '/images/arcade-bg-marsh-day.png',
   },
   5: {
     level: 5,
@@ -44,7 +44,7 @@ export const LEVEL_CONFIGS: Record<number, LevelConfig> = {
     simultaneousGeese: 4, // +2 extra geese
     baseSpeedMultiplier: 1.9,
     allowedTypes: ['BLUE', 'RED'],
-    themeBackground: '/images/background-6-selection4.png',
+    themeBackground: '/images/arcade-bg-marsh-dusk.png',
   },
 };
 
