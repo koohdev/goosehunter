@@ -153,10 +153,26 @@ export class GameEngine {
     this.aimY = Math.max(10, Math.min(this.canvas.height - 10, y));
   }
 
+  private lastShotTime: number = 0;
+
   public fireShot(): FireResult {
     if (!this.canvas) {
       return { hit: false, pointsAwarded: 0, bulletsRemaining: 0, x: 0, y: 0 };
     }
+
+    const now = performance.now();
+    // Gun cooldown guard (prevents duplicate rapid trigger events within 120ms)
+    if (now - this.lastShotTime < 120) {
+      const state = this.levelManager.getState();
+      return {
+        hit: false,
+        pointsAwarded: 0,
+        bulletsRemaining: state.bulletsRemaining,
+        x: this.aimX,
+        y: this.aimY,
+      };
+    }
+    this.lastShotTime = now;
 
     const state = this.levelManager.getState();
     if (state.bulletsRemaining <= 0 || state.status !== 'PLAYING') {

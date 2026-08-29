@@ -29,6 +29,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
 
   const lastAimRef = useRef({ x: 0, y: 0 });
   const aimThrottleRef = useRef<number>(0);
+  const lastShotTimeRef = useRef<number>(0);
 
   // Sync motion sensor configuration
   const updateMotionConfig = useCallback(
@@ -163,9 +164,16 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
     window.addEventListener('deviceorientation', onOrientation, { passive: true, once: true });
   }, [sessionId]);
 
-  // 4. Fire Trigger on screen tap
+  // 4. Fire Trigger on screen tap (Single-shot deduplication)
   const handleTriggerPress = (e: React.TouchEvent | React.MouseEvent) => {
-    e.preventDefault();
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+    const now = Date.now();
+    // Guard against double firing (touchstart + synthetic mousedown within 150ms)
+    if (now - lastShotTimeRef.current < 150) return;
+    lastShotTimeRef.current = now;
+
     if (controllerState !== 'READY') return;
 
     setIsFiring(true);
@@ -179,7 +187,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
       sessionId,
       x: lastAimRef.current.x,
       y: lastAimRef.current.y,
-      timestamp: Date.now(),
+      timestamp: now,
     });
   };
 
