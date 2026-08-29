@@ -22,7 +22,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
   const [gameState, setGameState] = useState({ score: 0, bullets: 10, level: 1 });
 
   // Grip & Sensitivity controls
-  const [gripMode, setGripMode] = useState<GripMode>('GUN_LANDSCAPE');
+  const [gripMode, setGripMode] = useState<GripMode>('POINTER_TOP');
   const [sensitivityPreset, setSensitivityPreset] = useState<'LOW' | 'NORMAL' | 'HIGH'>('NORMAL');
   const [invertY, setInvertY] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -35,9 +35,9 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
   const updateMotionConfig = useCallback(
     (newGrip: GripMode, preset: 'LOW' | 'NORMAL' | 'HIGH', invY: boolean) => {
       const sensitivities = {
-        LOW: { x: 34, y: 26 },
-        NORMAL: { x: 26, y: 20 },
-        HIGH: { x: 18, y: 14 },
+        LOW: { x: 32, y: 24 },
+        NORMAL: { x: 24, y: 18 },
+        HIGH: { x: 16, y: 12 },
       };
       const s = sensitivities[preset];
       motionSensor.setConfig({
@@ -125,7 +125,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
     }
   };
 
-  // 3. Calibrate center origin (3D matrix calibration)
+  // 3. Calibrate center origin
   const handleCalibrate = useCallback(() => {
     if (typeof window === 'undefined') return;
 
@@ -164,13 +164,13 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
     window.addEventListener('deviceorientation', onOrientation, { passive: true, once: true });
   }, [sessionId]);
 
-  // 4. Fire Trigger on screen tap (Single-shot deduplication)
+  // 4. Fire Trigger on screen tap (with single-shot deduplication)
   const handleTriggerPress = (e: React.TouchEvent | React.MouseEvent) => {
     if (e.cancelable) {
       e.preventDefault();
     }
     const now = Date.now();
-    // Guard against double firing (touchstart + synthetic mousedown within 150ms)
+    // Guard against duplicate trigger within 150ms
     if (now - lastShotTimeRef.current < 150) return;
     lastShotTimeRef.current = now;
 
@@ -239,30 +239,20 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
         </div>
       </div>
 
-      {/* Settings Modal Drawer */}
+      {/* Settings Drawer */}
       {showSettings && (
-        <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3.5 my-2 flex flex-col gap-3 text-xs shadow-xl animate-in fade-in duration-150">
+        <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3.5 my-2 flex flex-col gap-3 text-xs shadow-xl animate-in fade-in duration-150 z-50">
           <div className="flex items-center justify-between font-bold text-zinc-100 border-b border-zinc-800 pb-1.5">
-            <span>MOTION SETTINGS</span>
+            <span>GUN & SENSOR SETTINGS</span>
             <button onClick={() => setShowSettings(false)} className="text-zinc-400 hover:text-zinc-100 text-xs px-2 py-0.5">
               Done
             </button>
           </div>
 
-          {/* Grip Mode */}
+          {/* Grip Style */}
           <div>
             <div className="text-[10px] text-zinc-400 uppercase font-semibold mb-1">Grip Style</div>
             <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setGripMode('GUN_LANDSCAPE')}
-                className={`py-2 px-2 rounded text-[11px] font-bold border transition ${
-                  gripMode === 'GUN_LANDSCAPE'
-                    ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                    : 'bg-zinc-800 border-zinc-700 text-zinc-400'
-                }`}
-              >
-                🔫 Landscape Gun
-              </button>
               <button
                 onClick={() => setGripMode('POINTER_TOP')}
                 className={`py-2 px-2 rounded text-[11px] font-bold border transition ${
@@ -271,12 +261,27 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
                     : 'bg-zinc-800 border-zinc-700 text-zinc-400'
                 }`}
               >
-                🎯 Top Pointer
+                🔫 Top Pointer / Gun
+              </button>
+              <button
+                onClick={() => setGripMode('GUN_LANDSCAPE')}
+                className={`py-2 px-2 rounded text-[11px] font-bold border transition ${
+                  gripMode === 'GUN_LANDSCAPE'
+                    ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                    : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                }`}
+              >
+                📱 Side / Landscape
               </button>
             </div>
+            <p className="text-[10px] text-zinc-500 mt-1">
+              {gripMode === 'POINTER_TOP'
+                ? 'Point the top edge of your phone at the screen like a light gun / remote.'
+                : 'Hold phone horizontally on its side, point back camera at screen.'}
+            </p>
           </div>
 
-          {/* Sensitivity Preset */}
+          {/* Sensitivity */}
           <div>
             <div className="text-[10px] text-zinc-400 uppercase font-semibold mb-1">Sensitivity</div>
             <div className="grid grid-cols-3 gap-1.5">
@@ -298,7 +303,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
 
           {/* Invert Y Axis */}
           <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80">
-            <span className="text-[11px] text-zinc-300">Invert Y Axis (Vertical)</span>
+            <span className="text-[11px] text-zinc-300">Invert Vertical (Y) Aim</span>
             <button
               onClick={() => setInvertY((prev) => !prev)}
               className={`px-3 py-1 rounded text-[10px] font-bold border ${
@@ -319,9 +324,9 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
           </div>
 
           <div>
-            <h2 className="text-lg sm:text-xl font-bold text-zinc-100 mb-1.5">LANDSCAPE GUN CONTROLLER</h2>
+            <h2 className="text-lg sm:text-xl font-bold text-zinc-100 mb-1.5">MOTION LIGHT GUN CONTROLLER</h2>
             <p className="text-zinc-400 text-xs max-w-xs mx-auto leading-relaxed">
-              Hold phone horizontally on its side like a light gun. Aim at the screen and tap anywhere to shoot.
+              Hold your phone like a laser gun. Point at the screen to aim, and tap anywhere to shoot.
             </p>
           </div>
 
@@ -344,31 +349,31 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
           <div>
             <h2 className="text-lg sm:text-xl font-bold text-zinc-100 mb-1.5">CALIBRATE AIM</h2>
             <p className="text-zinc-400 text-xs max-w-sm mx-auto leading-relaxed">
-              Hold phone horizontally in your gun grip, point directly at the <span className="text-amber-400 font-bold">center of your screen</span>, then tap Calibrate below.
+              Point your phone directly at the <span className="text-amber-400 font-bold">center of your screen</span>, then tap Calibrate below.
             </p>
           </div>
 
-          {/* Quick Grip selector on calibration screen */}
+          {/* Grip Style Toggle */}
           <div className="flex items-center justify-center gap-2 w-full max-w-xs">
             <button
-              onClick={() => setGripMode('GUN_LANDSCAPE')}
-              className={`flex-1 py-1.5 px-2 rounded text-[11px] font-bold border transition ${
-                gripMode === 'GUN_LANDSCAPE'
-                  ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                  : 'bg-zinc-900 border-zinc-700 text-zinc-400'
-              }`}
-            >
-              🔫 Landscape Gun
-            </button>
-            <button
               onClick={() => setGripMode('POINTER_TOP')}
-              className={`flex-1 py-1.5 px-2 rounded text-[11px] font-bold border transition ${
+              className={`flex-1 py-2 px-2 rounded text-[11px] font-bold border transition ${
                 gripMode === 'POINTER_TOP'
                   ? 'bg-amber-500/20 border-amber-400 text-amber-300'
                   : 'bg-zinc-900 border-zinc-700 text-zinc-400'
               }`}
             >
-              🎯 Top Pointer
+              🔫 Top Pointer / Gun
+            </button>
+            <button
+              onClick={() => setGripMode('GUN_LANDSCAPE')}
+              className={`flex-1 py-2 px-2 rounded text-[11px] font-bold border transition ${
+                gripMode === 'GUN_LANDSCAPE'
+                  ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                  : 'bg-zinc-900 border-zinc-700 text-zinc-400'
+              }`}
+            >
+              📱 Side / Landscape
             </button>
           </div>
 
@@ -381,7 +386,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
         </div>
       )}
 
-      {/* Screen 3: Active Gameplay Gun Controller (Full Touch Trigger Surface) */}
+      {/* Screen 3: Active Gameplay Gun Controller */}
       {controllerState === 'READY' && (
         <div className="flex-1 flex flex-col justify-between py-1.5 gap-2 sm:gap-3">
           {/* Controller HUD Pill */}
@@ -400,7 +405,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
             </div>
           </div>
 
-          {/* Large Landscape Touch Trigger Surface */}
+          {/* Touch Trigger Surface */}
           <div
             onTouchStart={handleTriggerPress}
             onMouseDown={handleTriggerPress}
@@ -410,13 +415,15 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
                 : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'
             }`}
           >
-            {/* Live Aim Position Dot Preview in Background */}
+            {/* Live Aim Position Reticle Preview */}
             <div
-              className="absolute w-6 h-6 rounded-full border border-amber-400/50 bg-amber-400/20 pointer-events-none transition-transform duration-75"
+              className="absolute w-8 h-8 rounded-full border-2 border-amber-400/60 bg-amber-400/20 pointer-events-none transition-transform duration-75 flex items-center justify-center"
               style={{
-                transform: `translate(${currentAim.x * 60}px, ${currentAim.y * 40}px)`,
+                transform: `translate(${currentAim.x * 70}px, ${currentAim.y * 50}px)`,
               }}
-            />
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            </div>
 
             <div
               className={`p-4 sm:p-5 rounded-full border transition-all z-10 ${
@@ -430,7 +437,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
               {isFiring ? 'SHOT FIRED' : 'TAP SCREEN TO SHOOT'}
             </div>
 
-            <div className="text-[10px] text-zinc-500 mt-0.5 z-10">
+            <div className="text-[10px] text-zinc-400 mt-0.5 z-10">
               Aim X: {currentAim.x} | Y: {currentAim.y}
             </div>
           </div>
@@ -478,7 +485,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ sessionId })
 
       {/* Footer Info */}
       <div className="text-center text-[10px] text-zinc-500 pt-1.5 border-t border-zinc-900 flex items-center justify-center gap-1.5">
-        <Smartphone className="w-3 h-3 text-zinc-400" /> {gripMode === 'GUN_LANDSCAPE' ? 'Landscape Gun Grip' : 'Top Pointer'} • Tap anywhere to fire
+        <Smartphone className="w-3 h-3 text-zinc-400" /> {gripMode === 'POINTER_TOP' ? 'Top Pointer (Pistol Barrel)' : 'Side / Landscape Grip'} • Tap anywhere to fire
       </div>
     </div>
   );

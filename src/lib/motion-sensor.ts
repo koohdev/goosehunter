@@ -1,28 +1,39 @@
 import { AimCoordinates } from './types';
 
-export type GripMode = 'GUN_LANDSCAPE' | 'POINTER_TOP' | 'PORTRAIT';
+export type GripMode = 'POINTER_TOP' | 'GUN_LANDSCAPE' | 'PORTRAIT_FACE';
 
 export interface MotionConfig {
   sensitivityX: number; // Degrees for full horizontal screen width
   sensitivityY: number; // Degrees for full vertical screen height
-  smoothingAlpha: number; // 0.1 (very smooth) to 0.9 (instant)
+  smoothingAlpha: number; // 0.1 (smooth) to 1.0 (instant)
   gripMode: GripMode;
   invertY: boolean;
+  invertX: boolean;
+}
+
+function wrapAngle(deg: number): number {
+  let a = deg % 360;
+  if (a > 180) a -= 360;
+  if (a < -180) a += 360;
+  return a;
 }
 
 export class MotionSensorService {
   private config: MotionConfig = {
-    sensitivityX: 26, // 26 degrees comfortable wrist aim across screen
-    sensitivityY: 20, // 20 degrees comfortable vertical tilt
-    smoothingAlpha: 0.7,
-    gripMode: 'GUN_LANDSCAPE',
+    sensitivityX: 24, // 24 degrees comfortable wrist sweep
+    sensitivityY: 18, // 18 degrees comfortable vertical sweep
+    smoothingAlpha: 0.75,
+    gripMode: 'POINTER_TOP', // Default to pointing top of phone at screen like a gun/remote
     invertY: false,
+    invertX: false,
   };
 
-  private centerMatrix: number[][] | null = null;
+  private centerAlpha: number = 0;
   private centerBeta: number = 0;
   private centerGamma: number = 0;
-  private centerAlpha: number = 0;
+
+  private currentRawAngles = { alpha: 0, beta: 0, gamma: 0 };
+  private currentDeltas = { dx: 0, dy: 0 };
 
   private smoothedX: number = 0;
   private smoothedY: number = 0;
@@ -36,6 +47,15 @@ export class MotionSensorService {
 
   public getConfig(): MotionConfig {
     return { ...this.config };
+  }
+
+  public getCurrentDebugInfo() {
+    return {
+      raw: { ...this.currentRawAngles },
+      deltas: { ...this.currentDeltas },
+      center: { alpha: this.centerAlpha, beta: this.centerBeta, gamma: this.centerGamma },
+      smoothed: { x: this.smoothedX, y: this.smoothedY },
+    };
   }
 
   public async requestPermissions(): Promise<boolean> {
@@ -58,51 +78,12 @@ export class MotionSensorService {
     return true;
   }
 
-  /**
-   * Convert W3C DeviceOrientation Euler angles (alpha, beta, gamma) into a 3x3 rotation matrix.
-   */
-  private getRotationMatrix(alpha: number, beta: number, gamma: number): number[][] {
-    const deg2rad = Math.PI / 180;
-    const a = alpha * deg2rad;
-    const b = beta * deg2rad;
-    const g = gamma * deg2rad;
-
-    const cA = Math.cos(a), sA = Math.sin(a);
-    const cB = Math.cos(b), sB = Math.sin(b);
-    const cG = Math.cos(g), sG = Math.sin(g);
-
-    // Z-X'-Y'' Intrinsic Rotation Matrix
-    return [
-      [cA * cG - sA * sB * sG, -cB * sA, cA * sG + sA * sB * cG],
-      [sA * cG + cA * sB * sG,  cA * cB, sA * sG - cA * sB * cG],
-      [-cB * sG,                sB,      cB * cG],
-    ];
-  }
-
-  /**
-   * Compute relative rotation matrix: R_rel = R_center^T * R_current
-   */
-  private getRelativeMatrix(R0: number[][], R: number[][]): number[][] {
-    const res = [
-      [0, 0, 0],
-      [0, 0, 0],
-      [0, 0, 0],
-    ];
-    for (let i = 0; i < 3; i++) {
-      for (let j = 0; j < 3; j++) {
-        res[i][j] = R0[0][i] * R[0][j] + R0[1][i] * R[1][j] + R0[2][i] * R[2][j];
-      }
-    }
-    return res;
-  }
-
   public calibrate(beta: number, gamma: number, alpha?: number | null) {
     const validAlpha = typeof alpha === 'number' && !isNaN(alpha) ? alpha : 0;
     this.centerAlpha = validAlpha;
     this.centerBeta = beta;
     this.centerGamma = gamma;
 
-    this.centerMatrix = this.getRotationMatrix(validAlpha, beta, gamma);
     this.smoothedX = 0;
     this.smoothedY = 0;
     this.isCalibrated = true;
@@ -112,78 +93,88 @@ export class MotionSensorService {
     return this.isCalibrated;
   }
 
-  public getRawDelta(beta: number, gamma: number, alpha?: number | null): { rawX: number; rawY: number } {
+  public calculateDeltaDegrees(beta: number, gamma: number, alpha?: number | null): { deltaX: number; deltaY: number } {
     const hasAlpha = typeof alpha === 'number' && !isNaN(alpha);
-    const currentAlpha = hasAlpha ? alpha : 0;
+    const curAlpha = hasAlpha ? alpha : 0;
 
-    let deltaXDeg = 0;
-    let deltaYDeg = 0;
+    let deltaX = 0;
+    let deltaY = 0;
 
-    if (this.centerMatrix && hasAlpha) {
-      // 3D Matrix Relative Tracking (Gimbal-Lock Free)
-      const currentMatrix = this.getRotationMatrix(currentAlpha, beta, gamma);
-      const Rrel = this.getRelativeMatrix(this.centerMatrix, currentMatrix);
+    this.currentRawAngles = { alpha: curAlpha, beta, gamma };
 
-      // Aim Vector based on Grip Mode
-      let vx = 0;
-      let vy = 0;
-      let vz = -1;
-
-      if (this.config.gripMode === 'POINTER_TOP') {
-        // Pointing with the top edge of phone (Wiimote / Laser style)
-        vx = Rrel[0][1];
-        vy = Rrel[1][1];
-        vz = -Rrel[2][1];
+    if (this.config.gripMode === 'POINTER_TOP') {
+      // ----------------------------------------------------
+      // Mode 1: Top of phone points at screen (Pistol / Remote)
+      // ----------------------------------------------------
+      // Horizontal aim = Yaw (alpha) scaled by cosine of pitch
+      if (hasAlpha) {
+        const radBeta = (beta * Math.PI) / 180;
+        const cosBeta = Math.max(0.2, Math.cos(radBeta));
+        deltaX = wrapAngle(this.centerAlpha - curAlpha) * cosBeta;
       } else {
-        // Landscape Gun Grip / Portrait (Aiming line of sight towards screen)
-        vx = -Rrel[0][2];
-        vy = -Rrel[1][2];
-        vz = -Rrel[2][2];
+        // Fallback to roll if compass alpha is unavailable
+        deltaX = gamma - this.centerGamma;
       }
 
-      // Convert aim vector to horizontal/vertical deflection angles in degrees
-      deltaXDeg = Math.atan2(vx, Math.abs(vz) > 0.001 ? -vz : 1) * (180 / Math.PI);
-      deltaYDeg = Math.atan2(vy, Math.abs(vz) > 0.001 ? -vz : 1) * (180 / Math.PI);
+      // Vertical aim = Pitch (beta)
+      deltaY = -(beta - this.centerBeta);
+    } else if (this.config.gripMode === 'GUN_LANDSCAPE') {
+      // ----------------------------------------------------
+      // Mode 2: Landscape Gun Grip (phone held horizontally on side)
+      // ----------------------------------------------------
+      if (hasAlpha) {
+        deltaX = wrapAngle(this.centerAlpha - curAlpha);
+      } else {
+        deltaX = -(beta - this.centerBeta);
+      }
+
+      // In landscape, tilting up/down changes gamma (roll in portrait frame)
+      deltaY = -(gamma - this.centerGamma);
     } else {
-      // Direct Euler delta fallback when Alpha compass is unavailable
-      const isLandscape = this.config.gripMode === 'GUN_LANDSCAPE';
-      if (isLandscape) {
-        deltaXDeg = -(beta - this.centerBeta);
-        deltaYDeg = gamma - this.centerGamma;
+      // ----------------------------------------------------
+      // Mode 3: Portrait Face (upright, screen facing user)
+      // ----------------------------------------------------
+      if (hasAlpha) {
+        deltaX = wrapAngle(this.centerAlpha - curAlpha);
       } else {
-        deltaXDeg = gamma - this.centerGamma;
-        deltaYDeg = beta - this.centerBeta;
+        deltaX = gamma - this.centerGamma;
       }
+
+      deltaY = -(beta - this.centerBeta);
     }
 
-    if (this.config.invertY) {
-      deltaYDeg = -deltaYDeg;
-    }
+    if (this.config.invertX) deltaX = -deltaX;
+    if (this.config.invertY) deltaY = -deltaY;
 
-    // Map degrees to normalized range [-1.0, 1.0] with comfortable response curve
-    let rawX = deltaXDeg / Math.max(5, this.config.sensitivityX);
-    let rawY = deltaYDeg / Math.max(5, this.config.sensitivityY);
+    this.currentDeltas = { dx: deltaX, dy: deltaY };
 
-    // Apply subtle power curve for micro-aim precision in center + reach at borders
-    const signX = Math.sign(rawX);
-    const signY = Math.sign(rawY);
-    rawX = signX * Math.pow(Math.min(1, Math.abs(rawX)), 1.1);
-    rawY = signY * Math.pow(Math.min(1, Math.abs(rawY)), 1.1);
-
-    // Clamp between -1 and 1
-    rawX = Math.max(-1, Math.min(1, rawX));
-    rawY = Math.max(-1, Math.min(1, rawY));
-
-    return { rawX, rawY };
+    return { deltaX, deltaY };
   }
 
   public processOrientation(beta: number, gamma: number, alpha?: number | null): AimCoordinates {
-    const { rawX, rawY } = this.getRawDelta(beta, gamma, alpha);
+    const { deltaX, deltaY } = this.calculateDeltaDegrees(beta, gamma, alpha);
 
-    // Exponential Moving Average (EMA) smoothing for jitter-free tracking
-    const alphaSmoothing = this.config.smoothingAlpha;
-    this.smoothedX = alphaSmoothing * rawX + (1 - alphaSmoothing) * this.smoothedX;
-    this.smoothedY = alphaSmoothing * rawY + (1 - alphaSmoothing) * this.smoothedY;
+    // Normalize to [-1.0, 1.0] range based on sensitivity angles
+    const sensX = Math.max(5, this.config.sensitivityX);
+    const sensY = Math.max(5, this.config.sensitivityY);
+
+    let rawX = deltaX / sensX;
+    let rawY = deltaY / sensY;
+
+    // Apply gentle power curve (x^1.05) for smooth center aiming + easy screen edge reach
+    const signX = Math.sign(rawX);
+    const signY = Math.sign(rawY);
+    rawX = signX * Math.pow(Math.min(1, Math.abs(rawX)), 1.05);
+    rawY = signY * Math.pow(Math.min(1, Math.abs(rawY)), 1.05);
+
+    // Clamp between -1.0 and 1.0
+    rawX = Math.max(-1, Math.min(1, rawX));
+    rawY = Math.max(-1, Math.min(1, rawY));
+
+    // Low-latency exponential moving average smoothing
+    const a = this.config.smoothingAlpha;
+    this.smoothedX = a * rawX + (1 - a) * this.smoothedX;
+    this.smoothedY = a * rawY + (1 - a) * this.smoothedY;
 
     return {
       x: Number(this.smoothedX.toFixed(4)),
